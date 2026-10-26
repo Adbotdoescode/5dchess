@@ -6,7 +6,11 @@ A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunk
 
 1. **Exact rules** of the original game: time travel, branching timelines, active/inactive timelines, the Present, multi-board checks, checkmate/stalemate across the multiverse, and all of the original's variants.
 2. **The original's look and feel**: flat 2D top-down multiverse on a large grey checkerboard background, small boards with cream/tan squares, purple timeline arrows with dark drop shadows, the vertical "The Present" bar, EB Garamond serif typography, pill buttons at the top ("Undo Move", "Submit Moves", "Deselect"), right-side vertical tabs ("History View", "Parallel View", "Flip Persp."), status text bottom-left ("Your turn - White pieces"). Reference screenshots: Steam guide https://steamcommunity.com/sharedfiles/filedetails/?id=2176513845
-3. **Online multiplayer with no accounts**: one player creates a game and shares a 6-character code, the other joins with it. Built on Supabase (RPC functions + Realtime broadcast). Also local hotseat play and play vs a computer.
+3. **Two play modes only**:
+   - **Online multiplayer (primary)**, no accounts: one player creates a game and shares a 6-character code (or `/?join=CODE` link), the other joins with it. Built on Supabase (RPC functions + Realtime broadcast).
+   - **Local**: one person plays both sides in the same browser.
+
+   There is deliberately **no computer opponent/AI**. The project owner decided it isn't worth building, so don't add one.
 
 ## Stack and commands
 
@@ -22,7 +26,6 @@ src/engine/   Pure TypeScript rules engine. No DOM, no React. types.ts is the pu
 src/render/   Three.js multiverse renderer. Dumb view: takes a RenderModel, emits square clicks. types.ts is the contract.
 src/net/      Supabase client, online sessions (join codes, realtime sync). types.ts is the contract.
 src/ui/       React app shell: menus, HUD, game controller wiring engine + renderer + net, sounds.
-src/bot/      Computer opponent (uses the engine only).
 supabase/     SQL migrations for the `games` table and RPCs.
 docs/         Rules/UI research notes.
 ```
