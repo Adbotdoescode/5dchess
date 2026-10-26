@@ -136,6 +136,27 @@ export interface MultiverseSnapshot {
   canCreateActiveTimeline: { white: boolean; black: boolean }
 }
 
+/**
+ * A move that has been made, with derived data for move lists and last-move
+ * highlights (yellow squares for spatial moves, blue for travel). Returned by
+ * `Game.actionRecords()` / `Game.pendingRecords()`.
+ */
+export interface MoveRecord {
+  move: Move
+  kind: MoveKind
+  player: Color
+  /** 5D PGN of the move (the last move of a submitted action carries "+"/"#" when it checks/mates). */
+  notation: string
+  /** Board created on the source timeline (from.l, from.t + 1). */
+  fromBoard: { l: number; t: number }
+  /** Board created by the arrival: jump → (to.l, to.t + 1); branch → first board of the new timeline. Absent for spatial moves. */
+  toBoard?: { l: number; t: number }
+  /** l of the timeline created by a branching move. */
+  createdTimeline?: number
+  /** The piece that was captured, if any. */
+  captured?: Piece
+}
+
 /** Public API of the rules engine (implemented by `Game` in ./game.ts). */
 export interface GameApi {
   readonly variant: VariantInfo
