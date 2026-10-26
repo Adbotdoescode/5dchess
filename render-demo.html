@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>5D Chess renderer demo</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; font: 13px system-ui, sans-serif; background: #c8c8c3; }
+      #view { position: absolute; inset: 0; }
+      #panel { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(255,255,255,0.88); border-radius: 8px;
+        padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; max-width: calc(100vw - 40px); box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+      #panel label { display: inline-flex; gap: 4px; align-items: center; }
+      #log { position: absolute; left: 8px; bottom: 8px; z-index: 2; max-height: 30vh; overflow: auto; width: 360px; font: 11px ui-monospace, monospace;
+        background: rgba(255,255,255,0.8); border-radius: 6px; padding: 4px 6px; white-space: pre; }
+      body.shot #panel, body.shot #log { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="panel">
+      <select id="fixture"></select>
+      <label><input type="checkbox" id="flip" /> Flip persp.</label>
+      <select id="filter"><option value="all">All</option><option value="history">History View</option><option value="parallel">Parallel View</option></select>
+      <label><input type="checkbox" id="three" /> 3D</label>
+      <label><input type="checkbox" id="anim" checked /> Animations</label>
+      <button id="present">Focus present</button>
+      <button id="advance">Advance (new board)</button>
+    </div>
+    <div id="log"></div>
+    <script type="module" src="/src/render/demo/main.ts"></script>
+  </body>
+</html>

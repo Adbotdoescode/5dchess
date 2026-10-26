@@ -85,6 +85,12 @@ export interface MultiverseRenderer {
   /** Pan/zoom so the present and all active timelines are visible. */
   focusPresent(): void
   setEvents(events: RendererEvents): void
+  /**
+   * Optional: CSS pixel position (relative to the container's top-left) of the
+   * centre of a square, or null if that board is not displayed. Useful for
+   * anchoring DOM popups (e.g. a promotion picker) to a square.
+   */
+  projectSquare?(pos: Pos): { x: number; y: number } | null
   /** Must be called when the container resizes (renderer may also observe itself). */
   resize(): void
   dispose(): void

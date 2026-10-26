@@ -47,7 +47,7 @@ Rules for module boundaries:
 
 ## Licensing — important
 
-The reference implementations (chess-in-5d, 5d-chess-js, 5d-chess-renderer: https://github.com/NKID00/chess-in-5d-stripped, https://github.com/NKID00/5d-chess-js, https://gitlab.com/5d-chess/5d-chess-renderer) are **AGPL-3.0**. Use them only to understand the rules and as a test oracle. **Do not copy their code or assets into `src/`.** Standard piece art comes from the cburnett set (CC BY-SA 3.0, Colin M.L. Burnett), credited in the README.
+The reference implementations (chess-in-5d, 5d-chess-js, 5d-chess-renderer: https://github.com/NKID00/chess-in-5d-stripped, https://github.com/NKID00/5d-chess-js, https://gitlab.com/5d-chess/5d-chess-renderer) are **AGPL-3.0**. Use them only to understand the rules and as a test oracle. **Do not copy their code or assets into `src/`.** Standard piece art comes from the cburnett set (Colin M.L. Burnett, multi-licensed on Wikimedia Commons), used under its BSD license option, with credits in `src/render/pieces/README.md`.
 
 ## Original-game reference notes
 
