@@ -13,4 +13,5 @@ export { computeClocks, sideToMove, parseServerTime, ClockOffsetEstimator } from
 export { normalizeCode, isValidCode, shareUrl, parseJoinCode, generateToken, memoryStorage } from './codes'
 export type { KeyValueStorage } from './codes'
 export { getSupabase, createSupabaseClient } from './supabase'
+export { CLOCK_PRESETS } from './types'
 export type * from './types'

@@ -24,6 +24,7 @@ import {
   type KeyValueStorage,
 } from './codes'
 import type {
+  ClockSettings,
   ClockState,
   OnlineApi,
   OnlineEvent,
@@ -212,8 +213,11 @@ interface Snapshot {
   role: OnlineRole
   actions: Action[]
   actionTimes: (number | null)[]
+  /** Per action: submitter's active-timeline count for the start of the next turn. */
+  nextActiveTimelines: (number | null)[]
+  firstActiveTimelines: number
   result: GameResult
-  clock: null | { initial: number; increment: number }
+  clock: null | ClockSettings
   opponentJoined: boolean
   firstPlayer: Color
   startedAt: number | null
@@ -232,10 +236,12 @@ export function parseSnapshot(data: unknown): Snapshot {
   if (typeof d.code !== 'string' || !Array.isArray(d.actions)) throw new Error('Unexpected server response')
   const actions: Action[] = []
   const actionTimes: (number | null)[] = []
+  const nextActiveTimelines: (number | null)[] = []
   for (const raw of d.actions as unknown[]) {
-    const { at, ...rest } = (raw ?? {}) as Record<string, unknown>
+    const { at, nextActiveTimelines: next, ...rest } = (raw ?? {}) as Record<string, unknown>
     actions.push(rest as unknown as Action)
     actionTimes.push(parseServerTime(at))
+    nextActiveTimelines.push(positiveInt(next))
   }
   const role: OnlineRole = isColor(d.myColor) ? d.myColor : 'spectator'
   const result = (d.result && typeof d.result === 'object' ? d.result : { kind: 'ongoing' }) as GameResult
@@ -243,7 +249,7 @@ export function parseSnapshot(data: unknown): Snapshot {
     d.clock && typeof d.clock === 'object'
       ? {
           initial: Number((d.clock as Record<string, unknown>).initial) || 0,
-          increment: Number((d.clock as Record<string, unknown>).increment) || 0,
+          delayPerTimeline: Number((d.clock as Record<string, unknown>).delayPerTimeline) || 0,
         }
       : null
   const cm = d.clockMs as Record<string, unknown> | null | undefined
@@ -253,6 +259,8 @@ export function parseSnapshot(data: unknown): Snapshot {
     role,
     actions,
     actionTimes,
+    nextActiveTimelines,
+    firstActiveTimelines: positiveInt(d.firstActiveTimelines) ?? 1,
     result,
     clock,
     opponentJoined: d.opponentJoined === true,
@@ -263,6 +271,12 @@ export function parseSnapshot(data: unknown): Snapshot {
     clockMs: cm && typeof cm === 'object' ? { white: Number(cm.white), black: Number(cm.black) } : null,
   }
 }
+
+function positiveInt(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : null
+}
+
+const turnStarts = (first: number, nexts: ReadonlyArray<number | null>) => [first, ...nexts]
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -278,8 +292,9 @@ interface Ctx {
   createRaw(opts: {
     variantId: string
     color: Color | 'random'
-    clock: null | { initial: number; increment: number }
+    clock: null | ClockSettings
     firstPlayer?: Color
+    firstActiveTimelines?: number
   }): Promise<{ token: string; snap: Snapshot }>
 }
 
@@ -334,6 +349,8 @@ export class GameSession implements OnlineSession {
       serverTimeOffset: ctx.offset.offset,
       clockMs: snap.clockMs,
       clockMsAt: snap.serverNow,
+      firstActiveTimelines: snap.firstActiveTimelines,
+      activeTimelinesAtTurnStart: turnStarts(snap.firstActiveTimelines, snap.nextActiveTimelines),
     }
     this.lastSync = ctx.env.now()
   }
@@ -375,7 +392,7 @@ export class GameSession implements OnlineSession {
     return computeClocks(this.state, this.serverNow())
   }
 
-  async submitAction(index: number, action: Action): Promise<void> {
+  async submitAction(index: number, action: Action, opts?: { nextActiveTimelines?: number }): Promise<void> {
     if (this.state.role === 'spectator') throw this.fail('Spectators cannot move')
     this.pendingIndex = index
     let snap: Snapshot
@@ -385,6 +402,7 @@ export class GameSession implements OnlineSession {
         p_token: this.token,
         p_index: index,
         p_action: action,
+        p_next_active_timelines: opts?.nextActiveTimelines ?? null,
       })
     } catch (e) {
       this.pendingIndex = null
@@ -539,19 +557,28 @@ export class GameSession implements OnlineSession {
       if (reset) {
         s.actions = snap.actions
         s.actionTimes = snap.actionTimes
+        s.activeTimelinesAtTurnStart = turnStarts(snap.firstActiveTimelines, snap.nextActiveTimelines)
       } else {
         for (let i = 0; i < localLen; i++) {
           if (s.actionTimes[i] == null) s.actionTimes[i] = snap.actionTimes[i] ?? null
+          if (s.activeTimelinesAtTurnStart[i + 1] == null) {
+            s.activeTimelinesAtTurnStart[i + 1] = snap.nextActiveTimelines[i] ?? null
+          }
         }
         for (let i = localLen; i < snap.actions.length; i++) {
           const action = snap.actions[i]
           const at = snap.actionTimes[i]
+          const next = snap.nextActiveTimelines[i]
           s.actions.push(action)
           s.actionTimes.push(at)
+          s.activeTimelinesAtTurnStart[i + 1] = next
           const mine = s.role !== 'spectator' && action.player === s.role
           if (reset) continue // already diverged: the 'reset' event carries the rest
           if (!mine) {
-            this.emit(at == null ? { type: 'action', index: i, action } : { type: 'action', index: i, action, at })
+            const e: Extract<OnlineEvent, { type: 'action' }> = { type: 'action', index: i, action }
+            if (at != null) e.at = at
+            if (next != null) e.nextActiveTimelines = next
+            this.emit(e)
           } else if (i !== this.pendingIndex) {
             reset = true // our action that this client didn't know about
           }
@@ -651,6 +678,7 @@ export class GameSession implements OnlineSession {
         color: opposite(this.state.role),
         clock: this.state.clock,
         firstPlayer: this.state.firstPlayer,
+        firstActiveTimelines: this.state.firstActiveTimelines,
       })
       this.broadcast({ t: 'rematch-start', code: snap.code })
       this.emit({ type: 'rematch-start', code: snap.code })
@@ -734,6 +762,7 @@ export function createOnlineApi(opts: OnlineApiOptions = {}): OnlineApi {
         p_token: token,
         p_clock: o.clock,
         p_first: o.firstPlayer ?? 'white',
+        p_first_active_timelines: o.firstActiveTimelines ?? 1,
       })
       getSeats().setToken(snap.code, token)
       if (snap.role !== 'spectator') getSeats().touch({ code: snap.code, variantId: snap.variantId, color: snap.role })

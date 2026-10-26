@@ -7,16 +7,39 @@ import type { Action, Color, GameResult } from '../engine/types'
 /** Our relation to a game: a seat, or a read-only spectator. */
 export type OnlineRole = Color | 'spectator'
 
-/** Clock settings in seconds. */
+/**
+ * Clock settings in seconds, as in the original's time controls ("20+5/L"):
+ * `initial` main time, plus at the start of every turn a DELAY of
+ * `delayPerTimeline` x (active timelines at the start of that turn) seconds
+ * during which the main clock does not run. Unused delay is lost.
+ */
 export interface ClockSettings {
   initial: number
-  /** Added to a player's clock after each of their submitted actions. */
-  increment: number
+  delayPerTimeline: number
 }
 
+export type ClockPresetId = 'none' | 'short' | 'medium' | 'long'
+
+export interface ClockPreset {
+  id: ClockPresetId
+  /** Label used in the original's Custom Match screen, e.g. "Medium (20+5/L)". */
+  label: string
+  /** Shorter label used in the original's Local Match screen, e.g. "Medium Clock". */
+  shortLabel: string
+  clock: ClockSettings | null
+}
+
+/** The original game's four time controls. */
+export const CLOCK_PRESETS: readonly ClockPreset[] = [
+  { id: 'none', label: 'No Clock (recommended)', shortLabel: 'No Clock (recommended)', clock: null },
+  { id: 'short', label: 'Short (10+3/L)', shortLabel: 'Short Clock', clock: { initial: 600, delayPerTimeline: 3 } },
+  { id: 'medium', label: 'Medium (20+5/L)', shortLabel: 'Medium Clock', clock: { initial: 1200, delayPerTimeline: 5 } },
+  { id: 'long', label: 'Long (40+8/L)', shortLabel: 'Long Clock', clock: { initial: 2400, delayPerTimeline: 8 } },
+]
+
 /**
- * Remaining time per side in milliseconds (may go negative once a flag has
- * fallen; clamp for display). See computeClocks() for the model.
+ * Remaining MAIN time per side in milliseconds (may go negative once a flag
+ * has fallen; clamp for display). See computeClocks() for the model.
  */
 export interface ClockState {
   white: number
@@ -25,6 +48,17 @@ export interface ClockState {
   running: Color | null
   /** Side whose time has run out, if any. */
   flagged: Color | null
+  /**
+   * Remaining delay (ms) of the running side's current turn; 0 when no clock
+   * is running. Show it as the "+N" suffix; main time ticks only once it is 0.
+   */
+  delayRemaining: number
+  /**
+   * Delay (ms) per side: the running side's remaining delay; for the other
+   * side 0 (its next delay is only known once the current turn is submitted).
+   * Before the game starts, the first player's full first-turn delay.
+   */
+  delayMs: { white: number; black: number }
 }
 
 export interface OnlineGameInfo {
@@ -37,7 +71,7 @@ export interface OnlineGameInfo {
   actions: Action[]
   result: GameResult
   /** Optional clock settings in seconds (null = untimed). */
-  clock: null | { initial: number; increment: number }
+  clock: null | ClockSettings
 
   // ---- Added for clocks / reconnects (all kept up to date by the session) ----
 
@@ -59,13 +93,32 @@ export interface OnlineGameInfo {
   clockMs: null | { white: number; black: number }
   /** Server time (ms) at which `clockMs` was computed. */
   clockMsAt: number | null
+  /** Active timelines at the start of turn 0 (the variant's starting count). */
+  firstActiveTimelines: number
+  /**
+   * Active timelines at the start of each turn, as reported by the submitters:
+   * entry i is for the turn that produced actions[i]; the extra last entry
+   * (length = actions.length + 1) is for the turn now in progress. Entry i > 0
+   * comes from actions[i-1]'s submitter, so compare the entries after an
+   * opponent action with your own engine and flag a mismatch.
+   * null where the submitter didn't report it (untimed games may omit it).
+   */
+  activeTimelinesAtTurnStart: (number | null)[]
 }
 
 export type OnlineEvent =
   | { type: 'opponent-joined' }
   | { type: 'opponent-presence'; online: boolean }
   /** An action submitted by the opponent; index is its position in the action list. */
-  | { type: 'action'; index: number; action: Action; /** server accept time (ms) */ at?: number }
+  | {
+      type: 'action'
+      index: number
+      action: Action
+      /** server accept time (ms) */
+      at?: number
+      /** Submitter's count of active timelines at the start of OUR next turn (verify with the engine). */
+      nextActiveTimelines?: number
+    }
   | { type: 'result'; result: GameResult }
   | { type: 'draw-offer' }
   | { type: 'draw-declined' }
@@ -83,8 +136,12 @@ export type OnlineEvent =
 export interface OnlineSession {
   /** Live view of the game, updated in place by the session (re-read fields; arrays may be replaced on 'reset'). */
   readonly info: OnlineGameInfo
-  /** Send our submitted action (index must equal current action count). */
-  submitAction(index: number, action: Action): Promise<void>
+  /**
+   * Send our submitted action (index must equal current action count).
+   * `nextActiveTimelines`: active timelines at the start of the opponent's
+   * next turn per our engine (required for timed games, 1..1000).
+   */
+  submitAction(index: number, action: Action, opts?: { nextActiveTimelines?: number }): Promise<void>
   setResult(result: GameResult): Promise<void>
   offerDraw(): void
   answerDraw(accept: boolean): void
@@ -119,9 +176,11 @@ export interface OnlineApi {
   createGame(opts: {
     variantId: string
     color: Color | 'random'
-    clock: null | { initial: number; increment: number }
+    clock: null | ClockSettings
     /** Side that submits the first action (default 'white'; set for turn-zero variants). */
     firstPlayer?: Color
+    /** Active timelines at the start of turn 0 (default 1; e.g. 2 for "Two Timelines"). */
+    firstActiveTimelines?: number
   }): Promise<OnlineSession>
   /** Join by code (claims the free seat, or resumes our own seat on reconnect). */
   joinGame(code: string): Promise<OnlineSession>

@@ -66,7 +66,12 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     const apiA = createOnlineApi({ client: fromSupabase(supaA), storage: storageA })
     const apiB = createOnlineApi({ client: fromSupabase(supaB), storage: storageB })
 
-    const a = await apiA.createGame({ variantId: 'standard', color: 'white', clock: { initial: 300, increment: 5 } })
+    const a = await apiA.createGame({
+      variantId: 'standard',
+      color: 'white',
+      clock: { initial: 300, delayPerTimeline: 5 },
+      firstActiveTimelines: 2,
+    })
     sessions.push(a)
     codes.add(a.info.code)
     const recA = recorder(a)
@@ -74,7 +79,8 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     expect(a.info.myColor).toBe('white')
     expect(a.info.opponentJoined).toBe(false)
     expect(a.info.startedAt).toBeNull()
-    expect(a.info.clock).toEqual({ initial: 300, increment: 5 })
+    expect(a.info.clock).toEqual({ initial: 300, delayPerTimeline: 5 })
+    expect(a.info.activeTimelinesAtTurnStart).toEqual([2])
 
     // submitting before the opponent joins is refused
     await expect(a.submitAction(0, act('white', 'early'))).rejects.toThrow(/waiting for opponent/)
@@ -98,15 +104,32 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     expect(c.role).toBe('spectator')
 
     await new Promise((r) => setTimeout(r, 1000)) // let B's channel subscribe
-    await a.submitAction(0, act('white', 'w1'))
+    // timed games require a valid active-timeline count
+    await expect(a.submitAction(0, act('white', 'w1'))).rejects.toThrow(/missing active timeline count/)
+    await expect(a.submitAction(0, act('white', 'w1'), { nextActiveTimelines: 0 })).rejects.toThrow(
+      /invalid active timeline count/,
+    )
+    await a.submitAction(0, act('white', 'w1'), { nextActiveTimelines: 3 })
     const got0 = await recB.waitFor((e) => e.type === 'action' && e.index === 0, 'B receives action 0')
     expect(got0).toMatchObject({ type: 'action', index: 0, action: act('white', 'w1') })
     expect(typeof (got0 as { at?: number }).at).toBe('number')
+    expect((got0 as { nextActiveTimelines?: number }).nextActiveTimelines).toBe(3)
+    expect(b.info.activeTimelinesAtTurnStart).toEqual([2, 3])
+    // black is inside its 3 x 5 s delay: main time untouched, delay counting down
+    const bClock = b.clocks()!
+    expect(bClock.running).toBe('black')
+    expect(bClock.black).toBe(300_000)
+    expect(bClock.delayRemaining).toBeGreaterThan(10_000)
+    expect(bClock.delayRemaining).toBeLessThanOrEqual(15_000)
+    expect(bClock.delayMs.white).toBe(0)
 
-    await b.submitAction(1, act('black', 'b1'))
+    await b.submitAction(1, act('black', 'b1'), { nextActiveTimelines: 1 })
+    // both turns finished within their delays, so the server charged no main time
+    expect(b.info.clockMs).toEqual({ white: 300_000, black: 300_000 })
     await recA.waitFor((e) => e.type === 'action' && e.index === 1, 'A receives action 1')
 
-    await a.submitAction(2, act('white', 'w2'))
+    await new Promise((r) => setTimeout(r, 1200))
+    await a.submitAction(2, act('white', 'w2'), { nextActiveTimelines: 1 })
     await recB.waitFor((e) => e.type === 'action' && e.index === 2, 'B receives action 2')
 
     // no echoes, no duplicates
@@ -116,16 +139,19 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     expect(a.info.actionTimes.every((t) => typeof t === 'number')).toBe(true)
 
     // out of turn / out of sync / wrong seat
-    await expect(a.submitAction(3, act('white', 'again'))).rejects.toThrow(/not your turn/)
-    await expect(b.submitAction(7, act('black', 'skip'))).rejects.toThrow(/out of sync: expected index 3/)
+    await expect(a.submitAction(3, act('white', 'again'), { nextActiveTimelines: 1 })).rejects.toThrow(/not your turn/)
+    await expect(b.submitAction(7, act('black', 'skip'), { nextActiveTimelines: 1 })).rejects.toThrow(/out of sync: expected index 3/)
     expect(recB.events.some((e) => e.type === 'error' && /out of sync/.test(e.message))).toBe(true)
-    await expect(b.submitAction(3, act('white', 'imposter'))).rejects.toThrow(/does not match your seat/)
+    await expect(b.submitAction(3, act('white', 'imposter'), { nextActiveTimelines: 1 })).rejects.toThrow(/does not match your seat/)
 
     // clocks: server-stamped and consistent with the server's own computation
     const clocks = a.clocks()!
     expect(clocks.running).toBe('black')
-    expect(clocks.white).toBeGreaterThan(290_000)
-    expect(clocks.white).toBeLessThanOrEqual(310_000)
+    expect(clocks.white).toBe(300_000) // white's 1.2 s turn fit inside its 5 s delay
+    expect(clocks.black).toBe(300_000)
+    expect(clocks.delayRemaining).toBeGreaterThan(0)
+    expect(clocks.delayRemaining).toBeLessThanOrEqual(5_000)
+    expect(a.info.activeTimelinesAtTurnStart).toEqual([2, 3, 1, 1])
     expect(a.info.clockMs).not.toBeNull()
     expect(Math.abs(a.info.serverTimeOffset)).toBeLessThan(60_000)
     console.log('[live] clocks', clocks, 'offset', a.info.serverTimeOffset, 'server clockMs', a.info.clockMs)
@@ -148,7 +174,7 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     await b.setResult({ kind: 'resignation', winner: 'white' })
     await recA.waitFor((e) => e.type === 'result', 'A receives result')
     expect(a.info.result).toEqual({ kind: 'resignation', winner: 'white' })
-    await expect(a.submitAction(3, act('white', 'late'))).rejects.toThrow(/game is over/)
+    await expect(a.submitAction(3, act('white', 'late'), { nextActiveTimelines: 1 })).rejects.toThrow(/game is over/)
 
     // rematch with swapped colors
     a.offerRematch()
@@ -163,7 +189,8 @@ describe.skipIf(!LIVE)('live Supabase backend', () => {
     sessions.push(a2, b2)
     expect(a2.info.myColor).toBe('black')
     expect(b2.info.myColor).toBe('white')
-    expect(a2.info.clock).toEqual({ initial: 300, increment: 5 })
+    expect(a2.info.clock).toEqual({ initial: 300, delayPerTimeline: 5 })
+    expect(a2.info.firstActiveTimelines).toBe(2)
 
     // rejoin after "refresh": a fresh API instance over the same storage resumes the seat
     const apiA2 = createOnlineApi({ client: fromSupabase(supaA), storage: storageA })

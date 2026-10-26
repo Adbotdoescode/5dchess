@@ -10,8 +10,9 @@ interface Row {
   black: string | null
   actions: Record<string, unknown>[]
   result: Record<string, unknown>
-  clock: { initial: number; increment: number } | null
+  clock: { initial: number; delayPerTimeline: number } | null
   first_player: 'white' | 'black'
+  first_active_timelines: number
   started_at: number | null
   ended_at: number | null
 }
@@ -33,6 +34,7 @@ export class FakeServer {
       clock: g.clock,
       opponentJoined: g.white !== null && g.black !== null,
       firstPlayer: g.first_player,
+      firstActiveTimelines: g.first_active_timelines,
       startedAt: g.started_at === null ? null : new Date(g.started_at).toISOString(),
       endedAt: g.ended_at === null ? null : new Date(g.ended_at).toISOString(),
       serverNow: new Date(this.now).toISOString(),
@@ -73,6 +75,7 @@ export class FakeServer {
           result: { kind: 'ongoing' },
           clock: (a.p_clock as Row['clock']) ?? null,
           first_player: (a.p_first as Row['first_player']) ?? 'white',
+          first_active_timelines: (a.p_first_active_timelines as number) ?? 1,
           started_at: null,
           ended_at: null,
         }
@@ -106,11 +109,18 @@ export class FakeServer {
         if (!g.white || !g.black) throw new Error('waiting for opponent')
         const action = a.p_action as Record<string, unknown>
         if (action.player !== c) throw new Error('action player does not match your seat')
+        const next = a.p_next_active_timelines as number | null
+        if (next != null && (next < 1 || next > 1000)) throw new Error('invalid active timeline count')
+        if (next == null && g.clock) throw new Error('missing active timeline count')
         const len = g.actions.length
         if (a.p_index !== len) throw new Error(`out of sync: expected index ${len}`)
         if ((len === 0 && c !== g.first_player) || (len > 0 && g.actions[len - 1].player === c))
           throw new Error('not your turn')
-        g.actions.push({ ...action, at: new Date(this.now).toISOString() })
+        g.actions.push({
+          ...action,
+          at: new Date(this.now).toISOString(),
+          ...(next != null ? { nextActiveTimelines: next } : {}),
+        })
         return this.json(g, c)
       }
       case 'set_result': {

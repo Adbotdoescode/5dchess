@@ -2,48 +2,94 @@ import { describe, expect, it } from 'vitest'
 import { ClockOffsetEstimator, computeClocks, parseServerTime, sideToMove } from './clock'
 import { isValidCode, normalizeCode, parseJoinCode, shareUrl, generateToken } from './codes'
 import type { ClockInput } from './clock'
+import { CLOCK_PRESETS } from './types'
 
 const base = (over: Partial<ClockInput> = {}): ClockInput => ({
-  clock: { initial: 60, increment: 2 },
+  clock: { initial: 600, delayPerTimeline: 3 }, // "Short (10+3/L)"
   firstPlayer: 'white',
   startedAt: 0,
   endedAt: null,
   result: { kind: 'ongoing' },
   actions: [],
   actionTimes: [],
+  activeTimelinesAtTurnStart: [1],
   ...over,
 })
 
-describe('computeClocks', () => {
+describe('computeClocks (delay per active timeline)', () => {
   it('returns null for untimed games and full time before start', () => {
     expect(computeClocks(base({ clock: null }), 5000)).toBeNull()
-    expect(computeClocks(base({ startedAt: null }), 5000)).toEqual({
-      white: 60000,
-      black: 60000,
+    expect(computeClocks(base({ startedAt: null, activeTimelinesAtTurnStart: [2] }), 5000)).toEqual({
+      white: 600_000,
+      black: 600_000,
       running: null,
       flagged: null,
+      delayRemaining: 0,
+      delayMs: { white: 6000, black: 0 }, // upcoming first-turn delay shown for the first player
     })
   })
 
-  it('charges the side to move and adds increments per completed turn', () => {
+  it('main time does not run during the delay', () => {
+    const c = computeClocks(base(), 2000)!
+    expect(c).toMatchObject({ white: 600_000, black: 600_000, running: 'white', delayRemaining: 1000 })
+    expect(c.delayMs).toEqual({ white: 1000, black: 0 })
+    expect(computeClocks(base(), 3000)).toMatchObject({ white: 600_000, delayRemaining: 0 })
+    expect(computeClocks(base(), 10_000)).toMatchObject({ white: 593_000, delayRemaining: 0 })
+  })
+
+  it('scales the delay by active timelines at the start of each turn; unused delay is lost', () => {
     const g = base({
       actions: [{ player: 'white' }, { player: 'black' }],
-      actionTimes: [10_000, 25_000],
+      actionTimes: [1_000, 21_000],
+      // turn 0: 1 line (3 s), turn 1: 4 lines (12 s), turn 2: 2 lines (6 s)
+      activeTimelinesAtTurnStart: [1, 4, 2],
     })
-    // white used 10s (+2 inc) and is running for 5s more; black used 15s (+2)
-    expect(computeClocks(g, 30_000)).toEqual({ white: 47_000, black: 47_000, running: 'white', flagged: null })
+    // white: turn 0 took 1 s < 3 s delay -> 0 used (2 s lost, not banked)
+    // black: turn 1 took 20 s - 12 s delay -> 8 s used
+    // white: turn 2 running for 10 s - 6 s delay -> 4 s used
+    expect(computeClocks(g, 31_000)).toEqual({
+      white: 596_000,
+      black: 592_000,
+      running: 'white',
+      flagged: null,
+      delayRemaining: 0,
+      delayMs: { white: 0, black: 0 },
+    })
+    expect(computeClocks(g, 24_000)).toMatchObject({ white: 600_000, delayRemaining: 3000, delayMs: { white: 3000, black: 0 } })
+  })
+
+  it('treats a missing count as 1 timeline', () => {
+    const g = base({ actions: [{ player: 'white' }], actionTimes: [0], activeTimelinesAtTurnStart: [1, null] })
+    expect(computeClocks(g, 3000)).toMatchObject({ running: 'black', black: 600_000, delayRemaining: 0 })
+    expect(computeClocks(g, 4000)).toMatchObject({ black: 599_000 })
   })
 
   it('respects firstPlayer (turn-zero variants)', () => {
     const g = base({ firstPlayer: 'black' })
     expect(sideToMove(g.actions, 'black')).toBe('black')
-    expect(computeClocks(g, 10_000)).toMatchObject({ white: 60_000, black: 50_000, running: 'black' })
+    expect(computeClocks(g, 10_000)).toMatchObject({ white: 600_000, black: 593_000, running: 'black' })
   })
 
   it('freezes at endedAt and reports flags', () => {
-    const g = base({ result: { kind: 'timeout', winner: 'black' }, endedAt: 61_000 })
-    expect(computeClocks(g, 999_999)).toEqual({ white: -1000, black: 60_000, running: null, flagged: 'white' })
-    expect(computeClocks(base(), 70_000)?.flagged).toBe('white')
+    const g = base({ clock: { initial: 60, delayPerTimeline: 0 }, result: { kind: 'timeout', winner: 'black' }, endedAt: 61_000 })
+    expect(computeClocks(g, 999_999)).toEqual({
+      white: -1000,
+      black: 60_000,
+      running: null,
+      flagged: 'white',
+      delayRemaining: 0,
+      delayMs: { white: 0, black: 0 },
+    })
+    expect(computeClocks(base({ clock: { initial: 60, delayPerTimeline: 3 } }), 64_000)?.flagged).toBe('white')
+  })
+
+  it('has the original presets', () => {
+    expect(CLOCK_PRESETS.map((p) => [p.label, p.clock])).toEqual([
+      ['No Clock (recommended)', null],
+      ['Short (10+3/L)', { initial: 600, delayPerTimeline: 3 }],
+      ['Medium (20+5/L)', { initial: 1200, delayPerTimeline: 5 }],
+      ['Long (40+8/L)', { initial: 2400, delayPerTimeline: 8 }],
+    ])
   })
 })
 

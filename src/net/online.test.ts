@@ -259,9 +259,44 @@ describe('online sessions (mocked backend)', () => {
     expect(a.info.actions).toHaveLength(1)
   })
 
+  it('carries active-timeline counts for clocks and verification', async () => {
+    const ctx = setup()
+    const a = await ctx.apiA.createGame({
+      variantId: 'two-timelines',
+      color: 'white',
+      clock: { initial: 600, delayPerTimeline: 3 },
+      firstActiveTimelines: 2,
+    })
+    const evA = record(a)
+    const b = await ctx.apiB.joinGame(a.info.code)
+    const evB = record(b)
+    await flush()
+    expect(b.info.firstActiveTimelines).toBe(2)
+    expect(b.info.activeTimelinesAtTurnStart).toEqual([2])
+    await expect(a.submitAction(0, act('white'))).rejects.toThrow(/missing active timeline count/)
+    expect(ofType(evA, 'error').at(-1)!.message).toMatch(/missing/)
+    await a.submitAction(0, act('white'), { nextActiveTimelines: 3 })
+    await flush()
+    const got = ofType(evB, 'action')[0]
+    expect(got.nextActiveTimelines).toBe(3)
+    expect(got.action).toEqual(act('white')) // server stamp fields stripped
+    expect(b.info.activeTimelinesAtTurnStart).toEqual([2, 3])
+    expect(a.info.activeTimelinesAtTurnStart).toEqual([2, 3])
+    expect(b.clocks()).toMatchObject({ running: 'black', delayRemaining: 9000 })
+    // rematch keeps the variant's starting count
+    a.offerRematch()
+    await flush()
+    b.acceptRematch()
+    await flush()
+    const code = ofType(evA, 'rematch-start')[0].code
+    const a2 = await ctx.apiA.joinGame(code)
+    expect(a2.info.firstActiveTimelines).toBe(2)
+    expect(a2.info.clock).toEqual({ initial: 600, delayPerTimeline: 3 })
+  })
+
   it('retries a timeout claim the server says is early', async () => {
     const ctx = setup()
-    const a = await ctx.apiA.createGame({ variantId: 's', color: 'white', clock: { initial: 60, increment: 0 } })
+    const a = await ctx.apiA.createGame({ variantId: 's', color: 'white', clock: { initial: 60, delayPerTimeline: 5 } })
     await ctx.apiB.joinGame(a.info.code)
     await flush()
     ctx.net.server.timeoutRemaining = 40
