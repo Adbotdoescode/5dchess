@@ -51,6 +51,8 @@ The reference implementations (chess-in-5d, 5d-chess-js, 5d-chess-renderer: http
 
 ## Original-game reference notes
 
+Owner-supplied rules background (movement in 4D, board layout, move order, checks against past kings): `docs/reference-blog.md`. It is a helpful fan guide, NOT a source of truth: verify its claims against the original game, which always wins.
+
 - Pieces: P N B R Q K plus U (unicorn: any distance along a triagonal, i.e. 3 axes), D (dragon: 4 axes), S (princess: rook + bishop), W (brawn: pawn variant), C (common king: non-royal king), Y (royal queen: royal piece moving as a queen). Movement axes are x, y, l (timeline) and T (full turns; moving "1 step in time" means 2 half-turns, landing on a board of the same color).
 - Moving to a past board (or any non-end board) creates a new timeline. Moving to another timeline's playable end board does not.
 - A player may create at most one more *active* timeline than the opponent; extra ones are inactive (drawn with a white/black arrow instead of purple) until the opponent catches up.
