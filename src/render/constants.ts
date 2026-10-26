@@ -60,6 +60,8 @@ export const ARROW_HEAD_HALF = 0.42
 export const COLORS = {
   bgLight: '#c8c8c3',
   bgDark: '#c0c0bb',
+  bgEndedLight: '#a7a49c',
+  bgEndedDark: '#a19e96',
   shadow: '#383838',
 
   squareLight: '#fad4a4',

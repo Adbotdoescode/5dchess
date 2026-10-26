@@ -383,6 +383,10 @@ export class Renderer implements MultiverseRenderer {
     this.buildMarkers()
 
     const u = this.bg.material.uniforms
+    const [bgL, bgD] = this.bgColors()
+    u.cLight.value.set(bgL)
+    u.cDark.value.set(bgD)
+    this.gl.setClearColor(new THREE.Color(bgL))
     u.cellW.value = layout.cellWidth
     u.cellOrigin.value = layout.cellOrigin
     u.rowOffset.value = layout.rowOffset
@@ -417,6 +421,22 @@ export class Renderer implements MultiverseRenderer {
 
   focusPresent(): void {
     this.focusPresentNow(500)
+  }
+
+  panBy(dxPx: number, dyPx: number): void {
+    if (this.disposed) return
+    const w = this.rig.width / 2
+    const h = this.rig.height / 2
+    const a = this.rig.screenToGround(w, h)
+    const b = this.rig.screenToGround(w + dxPx, h + dyPx)
+    if (a && b) this.rig.panBy(b.x - a.x, b.y - a.y)
+    this.requestRender()
+  }
+
+  zoomBy(factor: number): void {
+    if (this.disposed) return
+    this.rig.zoomAt(factor, this.rig.width / 2, this.rig.height / 2)
+    this.requestRender()
   }
 
   resize(): void {
@@ -470,6 +490,11 @@ export class Renderer implements MultiverseRenderer {
 
   // -------------------------------------------------------------------------
   // Camera helpers
+
+  /** Background checker colours [light, dark] for the model's background tint. */
+  private bgColors(): [string, string] {
+    return this.model?.background === 'ended' ? [COLORS.bgEndedLight, COLORS.bgEndedDark] : [COLORS.bgLight, COLORS.bgDark]
+  }
 
   private focusPresentNow(dur: number) {
     const L = this.layout
@@ -1154,7 +1179,8 @@ export class Renderer implements MultiverseRenderer {
       const gy = g ? g.y : ground.y
       const row = Math.floor(gy + 0.5 + L.rowOffset)
       const odd = (((T + row) % 2) + 2) % 2 === 1
-      ctx.fillStyle = odd ? COLORS.bgDark : COLORS.bgLight
+      const [bgL, bgD] = this.bgColors()
+      ctx.fillStyle = odd ? bgD : bgL
       ctx.fillText(`T${T}`, p.x, by)
     }
   }

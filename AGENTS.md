@@ -10,7 +10,7 @@ A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunk
    - **Online multiplayer (primary)**, no accounts: one player creates a game and shares a 6-character code (or `/?join=CODE` link), the other joins with it. Built on Supabase (RPC functions + Realtime broadcast).
    - **Local**: one person plays both sides in the same browser.
 
-   The app is **only for playing the game**: menu = Online (create/join/rejoin), Local Match, Settings. The project owner explicitly does NOT want a computer opponent/AI, puzzles, a guide/tutorial or a credits screen, so don't add them. Piece-art attribution lives as one line in Settings.
+   The app is **only for playing the game**: menu = Online (create/join/rejoin), Local Match, Guide, Settings. The Guide is a plain-text rules page only (no interactive tutorial, mock gameplay or diagrams). The project owner explicitly does NOT want a computer opponent/AI, puzzles, an interactive tutorial or a credits screen, so don't add them. Piece-art attribution lives as one line in Settings.
 
 ## Stack and commands
 

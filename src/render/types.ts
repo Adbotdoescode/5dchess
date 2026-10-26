@@ -66,6 +66,8 @@ export interface RenderModel {
   animations: boolean
   /** 2D top-down (default) or tilted 3D camera. */
   cameraMode: '2d' | '3d'
+  /** Optional background tint: darker once the game is over (as in the original). Default 'default'. */
+  background?: 'default' | 'ended'
 }
 
 export interface RendererEvents {
@@ -91,6 +93,10 @@ export interface MultiverseRenderer {
    * anchoring DOM popups (e.g. a promotion picker) to a square.
    */
   projectSquare?(pos: Pos): { x: number; y: number } | null
+  /** Optional: pan the camera by a screen-space offset in CSS pixels (keyboard panning). */
+  panBy?(dxPx: number, dyPx: number): void
+  /** Optional: zoom by `factor` (>1 zooms in) around the viewport centre (keyboard zoom). */
+  zoomBy?(factor: number): void
   /** Must be called when the container resizes (renderer may also observe itself). */
   resize(): void
   dispose(): void
