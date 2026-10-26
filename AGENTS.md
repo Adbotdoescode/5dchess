@@ -10,7 +10,7 @@ A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunk
    - **Online multiplayer (primary)**, no accounts: one player creates a game and shares a 6-character code (or `/?join=CODE` link), the other joins with it. Built on Supabase (RPC functions + Realtime broadcast).
    - **Local**: one person plays both sides in the same browser.
 
-   There is deliberately **no computer opponent/AI**. The project owner decided it isn't worth building, so don't add one.
+   The app is **only for playing the game**: menu = Online (create/join/rejoin), Local Match, Settings. The project owner explicitly does NOT want a computer opponent/AI, puzzles, a guide/tutorial or a credits screen, so don't add them. Piece-art attribution lives as one line in Settings.
 
 ## Stack and commands
 
@@ -27,7 +27,7 @@ src/render/   Three.js multiverse renderer. Dumb view: takes a RenderModel, emit
 src/net/      Supabase client, online sessions (join codes, realtime sync). types.ts is the contract.
 src/ui/       React app shell: menus, HUD, game controller wiring engine + renderer + net, sounds.
 supabase/     SQL migrations for the `games` table and RPCs.
-docs/         Rules/UI research notes.
+docs/         Rules/UI research notes (ui-spec.md = the original's UI; parts about puzzles/guide/CPU are out of scope).
 ```
 
 Rules for module boundaries:
