@@ -508,8 +508,9 @@ export class Renderer implements MultiverseRenderer {
     const w = this.rig.width
     const h = this.rig.height
     const zoomFit = Math.min(w / (maxX - minX), h / (maxY - minY))
-    // never closer than the game's default framing (~5.3 rows on screen)
-    let zoom = Math.min(zoomFit, h / 5.3, w / 7)
+    // never closer than the game's default framing (~5.3 rows on screen); on narrow
+    // portrait screens (phones) allow ~3.4 boards across instead of 7 columns
+    let zoom = Math.min(zoomFit, h / 5.3, Math.max(w / 7, Math.min(w, h) / 3.4))
     let cy = (minY + maxY) / 2
     if (this.rig.mode === '3d') {
       // boards stand up from their row: aim a little higher and back off a bit

@@ -1,7 +1,71 @@
-body {
+/* Global styles: palette and type from docs/ui-spec.md §1. */
+:root {
+  --bg-a: #c0c0bb;
+  --bg-b: #c8c8c3;
+  --ui-fill: #e1e2d8;
+  --ui-fill-hi: #f4f5ed;
+  --ui-row-a: #ebece3;
+  --ui-row-b: #dddedd;
+  --ui-row-sel: #94b190;
+  --ink: #272727;
+  --shadow: #383838;
+  --ink-dark-ui: #40404a;
+  --purple: #9971a9;
+  --purple-dark: #845d9c;
+  --yellow: #dcce5f;
+  --yellow-lip: #c8b63d;
+  --blue: #8c88db;
+  --blue-lip: #756ade;
+  --red: #d46851;
+  --red-lip: #b8543d;
+  --green: #91ac8e;
+  --green-lip: #7b9878;
+  --tan: #e7c08e;
+  --tan-lip: #cda169;
+  --disabled-fill: #f1f1ec;
+  --disabled-ink: #bcbcbc;
+  --clock-bg: #424152;
+  --clock-active: #9471bf;
+  --serif: 'EB Garamond', Garamond, 'Times New Roman', Georgia, serif;
+  --sans: ui-sans-serif, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
   margin: 0;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  font-family: system-ui, sans-serif;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-b);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-variant-numeric: lining-nums;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue-lip);
+  outline-offset: 2px;
 }

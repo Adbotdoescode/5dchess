@@ -6,3 +6,6 @@ export type * from './types'
 
 export const createRenderer: CreateRenderer = (container: HTMLElement): MultiverseRenderer =>
   new Renderer(container)
+
+/** SVG markup of a piece image (for DOM glyphs in the HUD and menus). */
+export { pieceSvg } from './pieces'
