@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>5D Chess time-travel cinematic harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; font: 13px system-ui, sans-serif; background: #c8c8c3; }
+      #view { position: absolute; inset: 0; }
+      #panel { position: absolute; top: 8px; left: 8px; z-index: 10; background: rgba(255,255,255,0.9); border-radius: 8px;
+        padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; max-width: calc(100vw - 40px);
+        box-shadow: 0 2px 8px rgba(0,0,0,.15); transition: none; }
+      #panel label { display: inline-flex; gap: 4px; align-items: center; }
+      #panel input[type=number] { width: 4em; }
+      #status { position: absolute; left: 10px; bottom: 8px; z-index: 10; font: 12px ui-monospace, monospace; background: rgba(255,255,255,0.8); padding: 3px 6px; border-radius: 5px; }
+      body.shot #panel, body.shot #status { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="panel">
+      <select id="preset">
+        <option value="owner">Owner's recording: 1.d4 b5 2.(0T2)Ng1&gt;&gt;(0T1)g3</option>
+        <option value="custom">Custom (variant/piece below)</option>
+      </select>
+      <select id="variant"></select>
+      <select id="piece">
+        <option value="any">any piece</option>
+        <option>P</option><option>N</option><option>B</option><option>R</option><option>Q</option><option>K</option>
+        <option>U</option><option>D</option><option>S</option><option>W</option><option>C</option><option>Y</option>
+      </select>
+      <select id="color"><option value="white">white</option><option value="black">black</option></select>
+      <label>history <input id="history" type="number" min="0" max="40" value="2" /></label>
+      <label>depth <input id="depth" type="number" min="0" max="80" value="0" /></label>
+      <label>seed <input id="seed" type="number" value="1" /></label>
+      <label><input type="checkbox" id="flip" /> black persp.</label>
+      <select id="mode"><option value="2d">2D</option><option value="history">History View</option><option value="parallel">Parallel View</option></select>
+      <button id="build">Build</button>
+      <button id="play">Play ▶</button>
+      <label>speed <input id="speed" type="number" step="0.1" value="1" /></label>
+    </div>
+    <div id="status"></div>
+    <script type="module" src="/src/render/cinematic/demo/main.ts"></script>
+  </body>
+</html>

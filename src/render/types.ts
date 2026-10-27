@@ -110,6 +110,12 @@ export interface RenderModel {
   cameraMode?: '2d' | '3d'
   /** Optional: moves to animate (piece glides, board slides); see MotionBatch. */
   motion?: MotionBatch
+  /**
+   * Optional: boards (keyed "l:t") whose face is not drawn (their floor shadow stays), and
+   * arrows touching them are hidden. Used while a full-screen overlay (the time-travel
+   * cinematic) shows its own copy of a board on top.
+   */
+  hiddenBoards?: string[]
   /** Optional background tint: darker once the game is over (as in the original). Default 'default'. */
   background?: 'default' | 'ended'
 }
@@ -194,6 +200,12 @@ export interface MultiverseRenderer {
   setHud?(hud: HudLayout): void
   /** Optional: the current camera (e.g. for a full-screen overlay that takes over for a while). */
   getView?(): ViewState
+  /**
+   * Optional: put the camera target at (cx, cy) with `zoom` CSS px per world unit, instantly
+   * (default) or eased over `durationMs` (`ease: 'out-sine'` for the time-travel cinematic's
+   * zoom-out). Used to hand the view back after a full-screen overlay.
+   */
+  moveCamera?(cam: { cx: number; cy: number; zoom: number }, opts?: { durationMs?: number; ease?: 'in-out' | 'out' | 'out-sine' }): void
   /**
    * Optional: pause (false) / resume (true) pointer and wheel input on the view, e.g. while
    * an overlay plays. Paused input is ignored (no clicks, hover, pan or zoom).

@@ -24,6 +24,7 @@ A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunk
 ```
 src/engine/   Pure TypeScript rules engine. No DOM, no React. types.ts is the public contract.
 src/render/   Three.js multiverse renderer. Dumb view: takes a RenderModel, emits square clicks. types.ts is the contract.
+              render/cinematic/ is the original's time-travel cinematic (self-contained overlay; dev harness cinematic-demo.html).
 src/net/      Supabase client, online sessions (join codes, realtime sync). types.ts is the contract.
 src/ui/       React app shell: menus, HUD, game controller wiring engine + renderer + net, sounds.
 supabase/     SQL migrations for the `games` table and RPCs.
@@ -69,3 +70,4 @@ Owner-supplied rules background (movement in 4D, board layout, move order, check
 - A player may create at most one more *active* timeline than the opponent; extra ones are inactive (drawn with a white/black arrow instead of purple) until the opponent catches up.
 - The Present is the earliest end-board time over active timelines; you must move on every active timeline whose end board is at the Present before you can submit.
 - You may make moves that leave your king in check; you just can't submit while in check (red arrows show the threats).
+- The full-screen time-travel cinematic is in scope. The round button on the right edge is the original's one-shot switch: with it on, the player's next own travel plays the cinematic, then the button turns itself off. The opponent's travel never plays it. See docs/original-recording-notes.md, "Time-travel cinematic", for the rule, the evidence and the measured beats.

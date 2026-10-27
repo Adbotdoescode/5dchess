@@ -543,6 +543,12 @@ export class Renderer implements MultiverseRenderer {
     }
   }
 
+  moveCamera(cam: { cx: number; cy: number; zoom: number }, opts?: { durationMs?: number; ease?: 'in-out' | 'out' | 'out-sine' }): void {
+    const ease = opts?.ease === 'out-sine' ? (t: number) => Math.sin((Math.PI / 2) * t) : opts?.ease === 'in-out' ? easeInOut : easeOut
+    this.rig.animateTo({ cx: cam.cx, cy: cam.cy, zoom: cam.zoom }, Math.max(0, opts?.durationMs ?? 0), ease)
+    this.requestRender()
+  }
+
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled
     if (!enabled) {
@@ -659,7 +665,9 @@ export class Renderer implements MultiverseRenderer {
     const sk = structureKey(model)
     const structural = sk !== this.structKey || !prev
     this.structKey = sk
+    const hiddenChanged = (prevModel?.hiddenBoards ?? []).join() !== (model.hiddenBoards ?? []).join()
     this.model = model
+    if (hiddenChanged) for (const e of this.entries.values()) this.dirty.add(e)
     const layout = computeLayout(model)
     this.layout = layout
 
@@ -1192,9 +1200,11 @@ export class Renderer implements MultiverseRenderer {
     e.center.set(0, 0, 0).applyMatrix4(m.matrixWorld)
     const mat = m.material
     mat.opacity = e.opacity
+    const hidden = !!this.model?.hiddenBoards?.includes(p.key)
+    mat.visible = !hidden
     // thickness (3D)
     const th = BOARD_THICKNESS * pose.s
-    e.edge.visible = th > 0.002 && m.visible
+    e.edge.visible = th > 0.002 && m.visible && !hidden
     if (e.edge.visible) {
       // behind the face (never coplanar with it)
       e.edge.position.z = -th - 0.002
@@ -1848,7 +1858,9 @@ export class Renderer implements MultiverseRenderer {
     const list = [...model.arrows.filter((a) => history || a.kind !== 'last-move'), ...model.checks.map((c) => ({ from: c.from, to: c.to, kind: 'check' as const }))]
     const flat = this.rig.flat
     const toCam = cameraBasis(pose).forward.clone().negate()
+    const hiddenBoards = new Set(model.hiddenBoards ?? [])
     for (const a of list) {
+      if (hiddenBoards.has(boardKey(a.from.l, a.from.t)) || hiddenBoards.has(boardKey(a.to.l, a.to.t))) continue
       const k = `${a.kind}|${a.from.l},${a.from.t},${a.from.x},${a.from.y}|${a.to.l},${a.to.t},${a.to.x},${a.to.y}`
       if (seen.has(k)) continue
       seen.add(k)

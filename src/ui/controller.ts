@@ -5,12 +5,14 @@
 import { Game } from '../engine'
 import type { Action, Check, Color, GameResult, Move, MoveRecord, MultiverseSnapshot, Piece, Pos } from '../engine'
 import type { BoardArrow, HighlightedSquare, MotionBatch, MultiverseRenderer, PieceMotion, RenderModel, ViewFilter, ViewMode } from '../render'
+import { playTravelCinematic } from '../render/cinematic'
+import type { CinematicHandle } from '../render/cinematic'
 import type { ClockSettings, OnlineEvent, OnlineSession } from '../net'
 import { LocalClock, toClockView } from './clock'
 import type { ClockView, LocalClockSave } from './clock'
 import { detectEnd } from './mate'
 import { friendlyError } from './format'
-import { getSettings } from './settings'
+import { getSettings, updateSettings } from './settings'
 import type { Settings } from './settings'
 import { sound } from './sound'
 import { KEYS, loadJson, removeKey, saveJson } from './storage'
@@ -99,6 +101,14 @@ export class GameController {
   private gameRev = 0
   private listeners = new Set<() => void>()
   private renderer: MultiverseRenderer | null = null
+  /** Element hosting the renderer: the time-travel cinematic is overlaid on it. */
+  private viewHost: HTMLElement | null = null
+  /** The time-travel cinematic playing over the view (presentation only). */
+  private cinematic: CinematicHandle | null = null
+  /** While the cinematic plays, the renderer keeps showing this model (not the live one). */
+  private heldModel: RenderModel | null = null
+  /** HUD opacity (the cinematic fades the HUD out and back in). */
+  private onHud: ((opacity: number) => void) | null = null
   private cache: {
     rev: number
     snapshot: MultiverseSnapshot
@@ -122,6 +132,11 @@ export class GameController {
 
   private onNotice: ((text: string, tone: NoticeTone) => void) | null = null
   private onRematch: ((code: string) => void) | null = null
+
+  /** The time-travel cinematic fades the HUD out and back in through this. */
+  setHudHandler(fn: ((opacity: number) => void) | null): void {
+    this.onHud = fn
+  }
 
   setNoticeHandler(fn: ((text: string, tone: NoticeTone) => void) | null): void {
     this.onNotice = fn
@@ -196,8 +211,9 @@ export class GameController {
 
   // ---------------------------------------------------------------- lifecycle
 
-  attach(renderer: MultiverseRenderer): void {
+  attach(renderer: MultiverseRenderer, host?: HTMLElement): void {
     this.renderer = renderer
+    this.viewHost = host ?? null
     renderer.setEvents({
       onSquareClick: (pos) => this.clickSquare(pos),
       onSquareHover: (pos) => this.setHover(pos),
@@ -215,6 +231,9 @@ export class GameController {
   }
 
   detach(): void {
+    this.cinematic?.dispose()
+    this.cinematic = null
+    this.heldModel = null
     this.offSession?.()
     this.offSession = null
     this.renderer = null
@@ -260,6 +279,11 @@ export class GameController {
     const s = this.online
     if (!s) return true
     return s.role === this.game.player
+  }
+
+  /** True while the time-travel cinematic covers the view. */
+  get cinematicPlaying(): boolean {
+    return !!this.cinematic?.playing
   }
 
   get canInteract(): boolean {
@@ -463,7 +487,7 @@ export class GameController {
     const r = this.renderer
     if (!r) return
     // a perspective change flips the view in place (the renderer animates and mirrors the camera)
-    r.setModel(this.buildModel())
+    r.setModel(this.heldModel ?? this.buildModel())
   }
 
   /** Queue moves for the renderer to animate (played once). */
@@ -573,10 +597,13 @@ export class GameController {
   }
 
   makeMove(mv: Move): void {
-    if (!this.canInteract) return
+    if (!this.canInteract || this.cinematicPlaying) return
     let kind: string
+    // the view as it was before the move (the cinematic starts from it)
+    let before: RenderModel | null = null
     try {
       kind = this.game.moveKind(mv)
+      if (kind !== 'spatial' && this.cinematicWanted()) before = this.buildModel()
       this.game.makeMove(mv)
     } catch (e) {
       this.notice(e instanceof Error ? e.message : String(e), 'error')
@@ -586,11 +613,80 @@ export class GameController {
     this.dests = []
     this.animate(this.game.pendingRecords().slice(-1))
     sound.play(kind === 'spatial' ? 'move' : 'travel')
+    if (before) this.startCinematic(before, mv)
     this.changed()
+  }
+
+  // ---------------------------------------------------------------- time-travel cinematic
+
+  /**
+   * The original's rule (docs/original-recording-notes.md, "Time-travel cinematic"): with the
+   * round button on, the next time travel the player makes on this screen plays the vortex
+   * cinematic and the button turns itself off. The opponent's travel never plays it.
+   */
+  private cinematicWanted(): boolean {
+    return getSettings().travelAnimation && !!this.renderer && !!this.viewHost && !this.cinematic
+  }
+
+  private startCinematic(before: RenderModel, mv: Move): void {
+    const r = this.renderer
+    const host = this.viewHost
+    const rec = this.game.pendingRecords().at(-1)
+    if (!r || !host || !rec?.toBoard) return
+    // the button turns itself off as soon as the animation starts (before the HUD returns)
+    updateSettings({ travelAnimation: false })
+    this.heldModel = before
+    r.setInputEnabled?.(false)
+    this.gameRev++ // the model cache must see the move
+    const after = this.buildModel()
+    const toBoard = rec.toBoard
+    this.cinematic = playTravelCinematic(host, {
+      before,
+      after,
+      move: { from: mv.from, to: mv.to },
+      toBoard,
+      view: r.getView?.() ?? null,
+      onHud: (a) => this.onHud?.(a),
+      onCue: (c) => {
+        if (c === 'land') sound.play('move')
+      },
+      onLand: (cam) => {
+        // the move's own board-slide animation must not play under (or after) the overlay
+        this.heldModel = { ...this.buildModel(), animations: false, hiddenBoards: [bkey(cam.l, cam.t)] }
+        const rr = this.renderer
+        if (!rr) return
+        rr.setModel(this.heldModel)
+        rr.moveCamera?.({ cx: cam.cx, cy: cam.cy, zoom: cam.zoom })
+      },
+      onOverlayEnd: (cam) => {
+        this.heldModel = null
+        this.cinematic = null
+        this.onHud?.(1)
+        const rr = this.renderer
+        if (rr) {
+          rr.setModel({ ...this.buildModel(), animations: false })
+          rr.moveCamera?.({ cx: cam.cx, cy: cam.cy, zoom: cam.zoomOut }, { durationMs: cam.zoomOutMs, ease: 'out-sine' })
+          rr.setInputEnabled?.(true)
+        }
+        this.emit()
+      },
+    })
+    if (!this.cinematic.playing) {
+      // nothing to show (e.g. the boards are not in the layout): back to the live view
+      this.heldModel = null
+      this.cinematic = null
+      r.setInputEnabled?.(true)
+    }
+  }
+
+  /** Skip the cinematic (click / key), as the original's player can't but we allow. */
+  skipCinematic(): void {
+    this.cinematic?.skip()
   }
 
   undo(): void {
     sound.unlock()
+    if (this.cinematicPlaying) return
     if (this.selected) this.deselect()
     if (!this.canInteract) return
     const last = this.game.pendingRecords().slice(-1)
@@ -603,7 +699,7 @@ export class GameController {
 
   async submit(): Promise<void> {
     sound.unlock()
-    if (!this.canSubmit) return
+    if (!this.canSubmit || this.cinematicPlaying) return
     const g = this.game
     const action: Action = { player: g.player, moves: g.pendingMoves.slice() }
     const index = g.history.length

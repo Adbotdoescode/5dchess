@@ -7,8 +7,15 @@ export interface Settings {
   /** Sound effects on/off and volume (0..1). */
   sound: boolean
   volume: number
-  /** Time-travel / board animations (the round checkered button). */
+  /** Piece and board animations (pieces glide, new boards slide out). */
   animations: boolean
+  /**
+   * The original's round button (blue swirl = on, grey checker = off; hotkey I): the next
+   * time travel you make plays the full-screen vortex cinematic, after which the button
+   * turns itself off (docs/original-recording-notes.md, "Time-travel cinematic").
+   * Global and persisted, like the original's (not per game).
+   */
+  travelAnimation: boolean
   /** Local games: flip the view to the side to move after each submit (original default: on). */
   autoFlip: boolean
   /** Draw travel arrows for the whole history (original) or only for the last action. */
@@ -21,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   volume: 0.6,
   animations: true,
+  travelAnimation: true,
   autoFlip: true,
   allArrows: true,
   historyHighlights: true,

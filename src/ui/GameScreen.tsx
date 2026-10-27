@@ -14,7 +14,7 @@ import { copyText, useToasts } from './util'
 import { SettingsPanel } from './components/SettingsPanel'
 import { colorName, gameEndedLine, resultText, variantName, youLine } from './format'
 import { online } from '../net'
-import { updateSettings, useSettings } from './settings'
+import { getSettings, updateSettings, useSettings } from './settings'
 import { sound } from './sound'
 
 interface Props {
@@ -92,7 +92,14 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
     hudKey.current = ''
     syncHud() // before the first framing
     ctrl.setNoticeHandler(toast)
-    ctrl.attach(r)
+    // the time-travel cinematic fades the HUD out and back in
+    ctrl.setHudHandler((a) => {
+      const hud = hudRef.current
+      if (!hud) return
+      hud.style.opacity = a >= 1 ? '' : String(a)
+      hud.style.pointerEvents = a >= 1 ? '' : 'none'
+    })
+    ctrl.attach(r, host)
     // test hook (dev server, or ?debug on a deployed build)
     if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) (window as unknown as { __5d?: unknown }).__5d = { ctrl, renderer: r }
     const onContext = (e: MouseEvent) => {
@@ -109,6 +116,7 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
       window.removeEventListener('pagehide', onHide)
       window.removeEventListener('resize', onResize)
       ctrl.setNoticeHandler(null)
+      ctrl.setHudHandler(null)
       ctrl.detach()
       r.dispose()
       rendererRef.current = null
@@ -233,6 +241,10 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
         case 'u':
           ctrl.flip()
           return
+        case 'i':
+          // the original's hidden hotkey for the time-travel animation button
+          updateSettings({ travelAnimation: !getSettings().travelAnimation })
+          return
         case 'w':
         case 'a':
         case 's':
@@ -354,10 +366,11 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
             <span>*</span>
           </button>
           <button
-            className={`tab tab-round tab-anim ${settings.animations ? 'on' : ''}`}
-            aria-label={settings.animations ? 'Animations on' : 'Animations off'}
-            title={settings.animations ? 'Animations: on' : 'Animations: off'}
-            onClick={() => updateSettings({ animations: !settings.animations })}
+            className={`tab tab-round tab-anim ${settings.travelAnimation ? 'on' : ''}`}
+            aria-pressed={settings.travelAnimation}
+            aria-label="Time-travel animation"
+            title={settings.travelAnimation ? 'Time-travel animation: plays on your next time travel (I)' : 'Time-travel animation: off (I)'}
+            onClick={() => updateSettings({ travelAnimation: !settings.travelAnimation })}
           >
             <span className="checker" />
           </button>

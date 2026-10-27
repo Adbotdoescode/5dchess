@@ -363,18 +363,21 @@
   width: 1.15em;
   height: 1.15em;
 }
+/* The original's travel-animation button: a grey floor checker when off, a little blue
+   vortex when on (recording 1 s / 50 s; TV Tropes: "gray checkerboard ... or a blue swirl"). */
 .tab-anim .checker {
-  width: 1.55em;
-  height: 1.55em;
+  width: 1.84em;
+  height: 1.84em;
   border-radius: 50%;
-  background: transparent;
-  box-shadow: inset 0 0 0 0.07em #b7bcc6;
+  background-color: #bcbcb7;
+  background-image: conic-gradient(#c4c4bf 25%, transparent 0 50%, #c4c4bf 0 75%, transparent 0);
+  background-size: 0.92em 0.92em;
+  background-position: 0 0;
 }
 .tab-anim.on .checker {
-  background-color: #a7afbd;
-  background-image: conic-gradient(#8f98a8 25%, transparent 0 50%, #8f98a8 0 75%, transparent 0);
-  background-size: 0.52em 0.52em;
-  box-shadow: inset 0 0 0 0.07em #8f98a8;
+  background-color: #6e86ab;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%236e86ab' d='M84.00 50.00L100.00 50.00A50 50 0 0 1 85.36 85.36L74.04 74.04A34 34 0 0 0 84.00 50.00Z'/%3E%3Cpath fill='%23647ba3' d='M74.04 74.04L85.36 85.36A50 50 0 0 1 50.00 100.00L50.00 84.00A34 34 0 0 0 74.04 74.04Z'/%3E%3Cpath fill='%236e86ab' d='M50.00 84.00L50.00 100.00A50 50 0 0 1 14.64 85.36L25.96 74.04A34 34 0 0 0 50.00 84.00Z'/%3E%3Cpath fill='%23647ba3' d='M25.96 74.04L14.64 85.36A50 50 0 0 1 0.00 50.00L16.00 50.00A34 34 0 0 0 25.96 74.04Z'/%3E%3Cpath fill='%236e86ab' d='M16.00 50.00L0.00 50.00A50 50 0 0 1 14.64 14.64L25.96 25.96A34 34 0 0 0 16.00 50.00Z'/%3E%3Cpath fill='%23647ba3' d='M25.96 25.96L14.64 14.64A50 50 0 0 1 50.00 0.00L50.00 16.00A34 34 0 0 0 25.96 25.96Z'/%3E%3Cpath fill='%236e86ab' d='M50.00 16.00L50.00 0.00A50 50 0 0 1 85.36 14.64L74.04 25.96A34 34 0 0 0 50.00 16.00Z'/%3E%3Cpath fill='%23647ba3' d='M74.04 25.96L85.36 14.64A50 50 0 0 1 100.00 50.00L84.00 50.00A34 34 0 0 0 74.04 25.96Z'/%3E%3Cpath fill='%23647ba3' d='M68.44 54.60L82.99 58.23A34 34 0 0 1 67.51 79.14L59.79 66.29A19 19 0 0 0 68.44 54.60Z'/%3E%3Cpath fill='%236e86ab' d='M59.79 66.29L67.51 79.14A34 34 0 0 1 41.77 82.99L45.40 68.44A19 19 0 0 0 59.79 66.29Z'/%3E%3Cpath fill='%23647ba3' d='M45.40 68.44L41.77 82.99A34 34 0 0 1 20.86 67.51L33.71 59.79A19 19 0 0 0 45.40 68.44Z'/%3E%3Cpath fill='%236e86ab' d='M33.71 59.79L20.86 67.51A34 34 0 0 1 17.01 41.77L31.56 45.40A19 19 0 0 0 33.71 59.79Z'/%3E%3Cpath fill='%23647ba3' d='M31.56 45.40L17.01 41.77A34 34 0 0 1 32.49 20.86L40.21 33.71A19 19 0 0 0 31.56 45.40Z'/%3E%3Cpath fill='%236e86ab' d='M40.21 33.71L32.49 20.86A34 34 0 0 1 58.23 17.01L54.60 31.56A19 19 0 0 0 40.21 33.71Z'/%3E%3Cpath fill='%23647ba3' d='M54.60 31.56L58.23 17.01A34 34 0 0 1 79.14 32.49L66.29 40.21A19 19 0 0 0 54.60 31.56Z'/%3E%3Cpath fill='%236e86ab' d='M66.29 40.21L79.14 32.49A34 34 0 0 1 82.99 58.23L68.44 54.60A19 19 0 0 0 66.29 40.21Z'/%3E%3Cpath fill='%237890b4' d='M50 50L66.78 58.92A19 19 0 0 1 55.56 68.17Z'/%3E%3Cpath fill='%236e86ab' d='M50 50L55.56 68.17A19 19 0 0 1 41.08 66.78Z'/%3E%3Cpath fill='%237890b4' d='M50 50L41.08 66.78A19 19 0 0 1 31.83 55.56Z'/%3E%3Cpath fill='%236e86ab' d='M50 50L31.83 55.56A19 19 0 0 1 33.22 41.08Z'/%3E%3Cpath fill='%237890b4' d='M50 50L33.22 41.08A19 19 0 0 1 44.44 31.83Z'/%3E%3Cpath fill='%236e86ab' d='M50 50L44.44 31.83A19 19 0 0 1 58.92 33.22Z'/%3E%3Cpath fill='%237890b4' d='M50 50L58.92 33.22A19 19 0 0 1 68.17 44.44Z'/%3E%3Cpath fill='%236e86ab' d='M50 50L68.17 44.44A19 19 0 0 1 66.78 58.92Z'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
 }
 /* Seen from black's side, the tabs turn dark (recording, 18.5 s). */
 .side-tabs.persp-black .tab-star:not(.active),

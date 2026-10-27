@@ -149,7 +149,7 @@ References: STORE 09 (1080p, `research_imgs/store_ss_09.jpg`), `research_imgs/me
 
 - **Background**. A blue-grey "tunnel": concentric rings of a skewed checker pattern receding to a pale centre.
   - Cartoon chess-piece silhouettes (white with black outlines, and black) fly out of the centre towards the camera, growing and rotating, then leave the screen.
-  - The same vortex is used behind every menu and during the time-travel animation (§5.3).
+  - The same kind of vortex is used behind every menu and during the time-travel animation (§5.3; measured in docs/original-recording-notes.md).
 - **Title**. "5D Chess" (very large) over "With Multiverse Time Travel", top-left, in `#F4F5ED` with a hard dark shadow.
 - **Buttons** (small light pills, stacked top-to-bottom at the left): **Versus**, **Puzzles**, **Guide** (labelled **Rules** in the launch build), **Settings**, **Credits**, **Exit**.
   - A huge translucent purple downward arrow sits behind the stack. It runs from the top of the screen to below the last button (logo motif; PK `logo_with_arrow`).
@@ -529,18 +529,22 @@ TS 0:48 (`research_imgs/tentative_board_after_first_move_360p.png`), SG 04, 06.
 - Flip Persp. animates a rotation (HK).
 - At game start in BR 9:40→10:02 the camera zooms in on the single board.
 
-### 5.3 Time-travel animation (toggle: round checkered button) [C]
+### 5.3 Time-travel animation (toggle: round button) [C]
 
-Captured frame by frame in BR 12:47–12:58 (`research_imgs/time_travel_animation_sheet_a.png`, `..._b.png`). It plays when a piece is moved onto a past board. Total about 8–10 s:
+**Superseded by the frame-by-frame analysis in `docs/original-recording-notes.md`, "Time-travel cinematic"**, which has the trigger rule, the evidence and every measured beat. In short:
 
-1. The camera snaps from 3D to the flat view and pans along the source timeline (12:47–12:49).
-2. The timeline's boards tilt and slide into a diagonal **stack of cards**. The scene crossfades to the **blue vortex background** used in the menus, and the stack collapses back through history to the **destination past board** (12:50–12:51).
-3. On the vortex, the destination board pulses in and out of the distance while the **travelling piece** (shown large, outside the board) spirals towards it (12:52–12:57).
-4. The piece lands. The view fades back to the game, zoomed close on the **new board**, which now sits on its new timeline row. Then it zooms out to the normal view (12:58–13:00).
+- **The button:** a one-shot switch, a blue swirl when on and a grey checker when off (hotkey I).
+- **What triggers it:** the player's next own time travel plays the cinematic as the move is made, and the button turns itself off. It is global, not per game.
+- **The opponent's travel:** it never plays.
+- **Beats:**
+  1. An orthographic orbit stands the trip's boards up as a diagonal stack of cards.
+  2. The floor cross-fades into the vortex.
+  3. A perspective flight passes one board per second.
+  4. The travelling piece moves in a straight line (not a spiral) and lands.
+  5. The HUD returns, the vortex dissolves into the game zoomed on the new board, and the camera zooms out.
+- **Length:** about 5.1 s plus 1 s per extra board.
 
-Turning the toggle off skips this and just shows the new board (NL 13:39–13:44: the camera only pans).
-
-[I] Our version should be ≤3 s and skippable by click, with the same beats: rewind cards, vortex, piece lands. Default **on** for the first few travels, as in the original.
+Turning the toggle off skips this and just shows the new board (NL 13:39–13:44: the camera only pans). Ours can also be skipped with a click or a key.
 
 ### 5.4 Other animations [I unless noted]
 

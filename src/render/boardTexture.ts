@@ -82,7 +82,7 @@ export function canvasSize(p: BoardPlacement, tier: number): { cw: number; ch: n
   return { cw: Math.max(8, Math.round((tier * p.w) / longer)), ch: Math.max(8, Math.round((tier * p.h) / longer)) }
 }
 
-export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: boolean, tier: number, ov?: PieceOverride | null): void {
+export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: boolean, tier: number, ov?: PieceOverride | null, opts?: { coords?: boolean }): void {
   const { cw, ch } = canvasSize(p, tier)
   if (canvas.width !== cw) canvas.width = cw
   if (canvas.height !== ch) canvas.height = ch
@@ -139,7 +139,7 @@ export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: bo
   }
 
   // Coordinates (only when large enough to read)
-  if (sq >= 22) {
+  if (sq >= 22 && opts?.coords !== false) {
     const fs = Math.max(6, sq * 0.17)
     ctx.font = `600 ${fs}px "Helvetica Neue", Arial, sans-serif`
     for (let sr = 0; sr < b.height; sr++) {
