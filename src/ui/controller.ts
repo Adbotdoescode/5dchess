@@ -652,19 +652,21 @@ export class GameController {
       },
       onLand: (cam) => {
         // the move's own board-slide animation must not play under (or after) the overlay
-        this.heldModel = { ...this.buildModel(), animations: false, hiddenBoards: [bkey(cam.l, cam.t)] }
+        const m = this.buildModel() // the Present bar stays put until the camera has zoomed back out
+        this.heldModel = { ...m, snapshot: { ...m.snapshot, present: before.snapshot.present }, animations: false, hiddenBoards: [bkey(cam.l, cam.t)] }
         const rr = this.renderer
         if (!rr) return
         rr.setModel(this.heldModel)
         rr.moveCamera?.({ cx: cam.cx, cy: cam.cy, zoom: cam.zoom })
       },
       onOverlayEnd: (cam) => {
-        this.heldModel = null
+        this.heldModel = this.heldModel && { ...this.heldModel, hiddenBoards: undefined }
+        setTimeout(() => ((this.heldModel = null), this.render()), cam.zoomOutMs)
         this.cinematic = null
         this.onHud?.(1)
         const rr = this.renderer
         if (rr) {
-          rr.setModel({ ...this.buildModel(), animations: false })
+          if (this.heldModel) rr.setModel(this.heldModel)
           rr.moveCamera?.({ cx: cam.cx, cy: cam.cy, zoom: cam.zoomOut }, { durationMs: cam.zoomOutMs, ease: 'out-sine' })
           rr.setInputEnabled?.(true)
         }
