@@ -15,7 +15,7 @@ A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunk
 ## Stack and commands
 
 - Vite + React + TypeScript single-page app, deployed to Vercel as static files (project `adbotdoescodes-projects/5dchess`, production: https://5dimensionalchess.vercel.app). Pushing to `main` on GitHub (`Adbotdoescode/5dchess`) auto-deploys.
-- Three.js for the multiverse view (orthographic top-down by default; optional tilted 3D camera).
+- Three.js for the multiverse view: the flat top-down view plus the original's animated History View and Parallel View (orthographic 3D, boards standing like cards).
 - Supabase project `5dchess` (ref `xniodzbzxmcxnbrwhrph`). Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (in `.env.local` locally and in Vercel). The Supabase MCP server is configured in `.mcp.json`.
 - `npm run dev` · `npm run build` (type-checks) · `npx vitest run` (tests) · `npm run lint`.
 

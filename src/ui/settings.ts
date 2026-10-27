@@ -11,8 +11,6 @@ export interface Settings {
   animations: boolean
   /** Local games: flip the view to the side to move after each submit (original default: on). */
   autoFlip: boolean
-  /** 2D top-down (original) or tilted 3D camera. */
-  cameraMode: '2d' | '3d'
   /** Draw travel arrows for the whole history (original) or only for the last action. */
   allArrows: boolean
   /** Yellow/blue last-move squares on every past board. */
@@ -24,12 +22,18 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.6,
   animations: true,
   autoFlip: true,
-  cameraMode: '2d',
   allArrows: true,
   historyHighlights: true,
 }
 
-let current: Settings = { ...DEFAULT_SETTINGS, ...(loadJson<Partial<Settings>>(KEYS.settings) ?? {}) }
+function load(): Settings {
+  const saved = { ...(loadJson<Partial<Settings> & { cameraMode?: unknown }>(KEYS.settings) ?? {}) }
+  // the old tilted-3D-camera setting became the History / Parallel View tabs
+  delete saved.cameraMode
+  return { ...DEFAULT_SETTINGS, ...saved }
+}
+
+let current: Settings = load()
 const listeners = new Set<() => void>()
 
 export function getSettings(): Settings {

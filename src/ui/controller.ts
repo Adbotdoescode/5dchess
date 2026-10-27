@@ -4,7 +4,7 @@
 
 import { Game } from '../engine'
 import type { Action, Check, Color, GameResult, Move, MoveRecord, MultiverseSnapshot, Piece, Pos } from '../engine'
-import type { BoardArrow, HighlightedSquare, MultiverseRenderer, RenderModel, ViewFilter } from '../render'
+import type { BoardArrow, HighlightedSquare, MotionBatch, MultiverseRenderer, PieceMotion, RenderModel, ViewFilter, ViewMode } from '../render'
 import type { ClockSettings, OnlineEvent, OnlineSession } from '../net'
 import { LocalClock, toClockView } from './clock'
 import type { ClockView, LocalClockSave } from './clock'
@@ -77,7 +77,8 @@ export class GameController {
   private hover: Pos | null = null
   /** Manual "Flip Persp." toggle, relative to the automatic perspective. */
   flipped = false
-  viewFilter: ViewFilter = 'all'
+  /** Camera view: the flat 2D view or the original's animated History / Parallel View. */
+  viewMode: ViewMode = '2d'
   submitting = false
   checkingEnd = false
   opponentOnline: boolean | null = null
@@ -105,9 +106,11 @@ export class GameController {
     checks: Check[]
     required: string[]
   } | null = null
+  /** Moves for the renderer to animate (a new id each time something moved). */
+  private motion: MotionBatch | undefined
+  private motionSeq = 0
   private mateReq = 0
   private cycleIndex = -1
-  private lastPerspective: Color | null = null
   private flagClaimed = false
   private localClock: LocalClock | null = null
   private offSession: (() => void) | null = null
@@ -206,7 +209,6 @@ export class GameController {
       this.catchUp()
     }
     window.addEventListener('online', this.onBrowserOnline)
-    this.lastPerspective = this.perspective
     this.render()
     renderer.focusPresent()
     if (this.game.result().kind === 'ongoing') this.runEndCheck()
@@ -437,8 +439,8 @@ export class GameController {
     }
     if (this.hover && this.canInteract) highlights.push({ pos: this.hover, kind: 'hover' })
     const filterColor = this.myColor ?? this.game.player
-    // Selecting a piece fades the opponent-colour boards (SG 04) unless a view is active.
-    const viewFilter: ViewFilter = this.viewFilter === 'all' && this.selected ? 'history' : this.viewFilter
+    // Selecting a piece fades the opponent-colour boards (SG 04), in every view.
+    const viewFilter: ViewFilter = this.selected ? 'history' : 'all'
     return {
       snapshot: c.snapshot,
       perspective: this.perspective,
@@ -451,7 +453,8 @@ export class GameController {
       viewFilter,
       filterColor: this.selected ? this.game.player : filterColor,
       animations: s.animations,
-      cameraMode: s.cameraMode,
+      viewMode: this.viewMode,
+      motion: this.motion,
       background: this.isOver ? 'ended' : 'default',
     }
   }
@@ -459,10 +462,23 @@ export class GameController {
   render(): void {
     const r = this.renderer
     if (!r) return
+    // a perspective change flips the view in place (the renderer animates and mirrors the camera)
     r.setModel(this.buildModel())
-    const p = this.perspective
-    if (this.lastPerspective !== null && p !== this.lastPerspective) r.focusPresent()
-    this.lastPerspective = p
+  }
+
+  /** Queue moves for the renderer to animate (played once). */
+  private animate(recs: readonly MoveRecord[], reverse = false): void {
+    if (!recs.length) return
+    const moves: PieceMotion[] = recs.map((r) => ({ from: r.move.from, to: r.move.to, fromBoard: r.fromBoard, toBoard: r.toBoard }))
+    this.motion = { id: ++this.motionSeq, moves, reverse }
+  }
+
+  /** Keep the boards to move on next in view (gently), after a submit or the opponent's action. */
+  private follow(): void {
+    const r = this.renderer
+    if (!r) return
+    if (r.followPresent) r.followPresent()
+    else r.focusPresent()
   }
 
   activeTimelineCount(): number {
@@ -568,6 +584,7 @@ export class GameController {
     }
     this.selected = null
     this.dests = []
+    this.animate(this.game.pendingRecords().slice(-1))
     sound.play(kind === 'spatial' ? 'move' : 'travel')
     this.changed()
   }
@@ -576,7 +593,9 @@ export class GameController {
     sound.unlock()
     if (this.selected) this.deselect()
     if (!this.canInteract) return
+    const last = this.game.pendingRecords().slice(-1)
     if (this.game.undoMove()) {
+      this.animate(last, true)
       sound.play('undo')
       this.changed()
     }
@@ -605,7 +624,7 @@ export class GameController {
     if (s) this.submitting = true
     this.changed()
     if (this.game.checks().length > 0) setTimeout(() => sound.play('check'), 180)
-    this.renderer?.focusPresent()
+    this.follow()
     this.runEndCheck()
     if (!s) return
     try {
@@ -641,12 +660,10 @@ export class GameController {
     this.viewChanged()
   }
 
+  /** History / Parallel View tabs (T / Y): toggle that view; the other view switches directly. */
   toggleView(v: 'history' | 'parallel'): void {
-    const wasParallel = this.viewFilter === 'parallel'
-    this.viewFilter = this.viewFilter === v ? 'all' : v
+    this.viewMode = this.viewMode === v ? '2d' : v
     this.viewChanged()
-    // Parallel View packs the columns, so the camera has to follow the new layout.
-    if (wasParallel || this.viewFilter === 'parallel') this.renderer?.focusPresent()
   }
 
   dismissOverlay(show = false): void {
@@ -834,10 +851,12 @@ export class GameController {
           this.notice('Clock note: your opponent counted a different number of active timelines this turn')
         }
         const recs = g.actionRecords().at(-1) ?? []
+        // play the opponent's moves in sequence
+        this.animate(recs)
         sound.play(recs.some((r) => r.kind !== 'spatial') ? 'travel' : 'move')
         this.changed()
         if (this.game.checks().length > 0) setTimeout(() => sound.play('check'), 200)
-        this.renderer?.focusPresent()
+        this.follow()
         this.runEndCheck()
         return
       }

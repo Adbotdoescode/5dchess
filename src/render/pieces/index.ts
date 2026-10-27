@@ -38,9 +38,12 @@ export function loadPieceImages(): Promise<void> {
   return loadPromise
 }
 
+let ready = false
 export function piecesReady(): boolean {
+  if (ready) return true
   for (const img of images.values()) if (!img.complete || img.naturalWidth === 0) return false
-  return images.size > 0
+  ready = images.size > 0
+  return ready
 }
 
 const sprites = new Map<string, HTMLCanvasElement>()

@@ -34,8 +34,17 @@ export const HEAD_TIP = 1.0
 export const HEAD_HALF = 0.256
 /** Corner radius of the branch curve (centre line). */
 export const BRANCH_RADIUS = 0.3
-/** How far left of the first board a starting timeline's band begins. */
-export const BAND_LEAD = 3
+/** How far left of the first board a starting timeline's band begins (01.png / recording: ~1.5 slots). */
+export const BAND_LEAD = 1.5
+/** ...fading in from transparent over this length (the original's soft tail). */
+export const TAIL_FADE = 0.45
+
+/** Floor labels: timeline names end this far right of the furthest end board (recording: 1.47 slots). */
+export const LABEL_RIGHT = 1.47
+/** Turn labels sit this far below the lowest timeline row (recording: 1.37 rows). */
+export const TURN_LABEL_DROP = 1.37
+/** Cap height of the floor labels (world units, recording: ~0.12). */
+export const LABEL_CAP = 0.12
 
 /** "The Present" bar. */
 export const BAR_WIDTH = 0.62

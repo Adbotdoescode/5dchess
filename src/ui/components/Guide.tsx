@@ -201,7 +201,7 @@ export function Guide() {
       <ul>
         <li>Top centre: Undo Move (or Deselect while a piece is selected) and Submit Moves. When the game is over, Submit Moves turns into Finish Game.</li>
         <li>Right edge, from the top: the * game menu, the round checkered button (animations on or off), History View, Parallel View, Flip Persp. and the board cycle button.</li>
-        <li>History View fades the boards of your opponent's colour. Parallel View packs the boards of your colour side by side so you can compare timelines.</li>
+        <li>History View and Parallel View turn the camera into a 3D view where the boards stand up like cards: History View looks back along time, so the boards of each timeline line up one behind the other; Parallel View looks across the timelines, so boards of the same turn line up. Click the green tab again to return to the flat view. The green buttons next to a selected piece's board do the same.</li>
         <li>Flip Persp. turns the view around. In local games the view flips to the player to move after each submit; you can turn this off in the settings.</li>
         <li>Bottom left: whose turn it is. Top left: the clocks, when the game is timed.</li>
         <li>Drag to pan, scroll or pinch to zoom.</li>

@@ -238,3 +238,137 @@ export function arrowPositions(
   out.push(hl1.x, hl1.y, hl1.z, hr1.x, hr1.y, hr1.z, tip.x, tip.y, tip.z)
   return out
 }
+
+// ---------------------------------------------------------------------------
+// Slabs: ribbons with per-vertex alpha (the fading tail) and their side walls.
+
+/** Triangles + alphas + outline of a ribbon along `pts` (miter joins). */
+export interface RibbonOut {
+  pos: number[]
+  alpha: number[]
+}
+
+/** Left/right edge points (and alphas) of a ribbon of half-width `hw` along `pts`. */
+export function ribbonEdges(pts: Vec2[], hw: number): { left: Vec2[]; right: Vec2[] } {
+  const n = pts.length
+  const left: Vec2[] = []
+  const right: Vec2[] = []
+  for (let i = 0; i < n; i++) {
+    const p = pts[i]
+    const a = pts[Math.max(0, i - 1)]
+    const b = pts[Math.min(n - 1, i + 1)]
+    let tx: number
+    let ty: number
+    if (i === 0 || i === n - 1) {
+      tx = b.x - a.x
+      ty = b.y - a.y
+    } else {
+      const la = Math.hypot(p.x - a.x, p.y - a.y) || 1
+      const lb = Math.hypot(b.x - p.x, b.y - p.y) || 1
+      tx = (p.x - a.x) / la + (b.x - p.x) / lb
+      ty = (p.y - a.y) / la + (b.y - p.y) / lb
+    }
+    const l = Math.hypot(tx, ty) || 1
+    tx /= l
+    ty /= l
+    let nx = -ty
+    let ny = tx
+    let scale = hw
+    if (i > 0 && i < n - 1) {
+      const ax = p.x - a.x
+      const ay = p.y - a.y
+      const la = Math.hypot(ax, ay) || 1
+      const dot = nx * (-ay / la) + ny * (ax / la)
+      scale = hw / Math.max(0.3, dot)
+    }
+    nx *= scale
+    ny *= scale
+    left.push({ x: p.x + nx, y: p.y + ny })
+    right.push({ x: p.x - nx, y: p.y - ny })
+  }
+  return { left, right }
+}
+
+/** Ribbon triangles at height z with per-point alphas. */
+export function ribbonAlpha(pts: Vec2[], alphas: number[], hw: number, z: number, out: RibbonOut): void {
+  if (pts.length < 2) return
+  const { left, right } = ribbonEdges(pts, hw)
+  for (let i = 0; i < pts.length - 1; i++) {
+    const l0 = left[i]
+    const r0 = right[i]
+    const l1 = left[i + 1]
+    const r1 = right[i + 1]
+    const a0 = alphas[i]
+    const a1 = alphas[i + 1]
+    out.pos.push(l0.x, l0.y, z, r0.x, r0.y, z, l1.x, l1.y, z, r0.x, r0.y, z, r1.x, r1.y, z, l1.x, l1.y, z)
+    out.alpha.push(a0, a0, a1, a0, a1, a1)
+  }
+}
+
+/** Convex polygon (fan) at height z, opaque. */
+export function polygonAlpha(pts: Vec2[], z: number, out: RibbonOut, alpha = 1): void {
+  for (let i = 1; i < pts.length - 1; i++) {
+    out.pos.push(pts[0].x, pts[0].y, z, pts[i].x, pts[i].y, z, pts[i + 1].x, pts[i + 1].y, z)
+    out.alpha.push(alpha, alpha, alpha)
+  }
+}
+
+/** Vertical walls from z0 to z1 along a polyline (one quad per segment). */
+export function wallsAlpha(pts: Vec2[], alphas: number[], z0: number, z1: number, out: RibbonOut, closed = false): void {
+  const n = pts.length
+  const m = closed ? n : n - 1
+  for (let i = 0; i < m; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % n]
+    const aa = alphas[i]
+    const ab = alphas[(i + 1) % n]
+    out.pos.push(a.x, a.y, z0, b.x, b.y, z0, b.x, b.y, z1, a.x, a.y, z0, b.x, b.y, z1, a.x, a.y, z1)
+    out.alpha.push(aa, ab, ab, aa, ab, aa)
+  }
+}
+
+/** BufferGeometry with positions and an RGBA vertex colour (white, alpha per vertex). */
+export function alphaGeometry(out: RibbonOut): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3))
+  const col = new Float32Array(out.alpha.length * 4)
+  for (let i = 0; i < out.alpha.length; i++) {
+    col[i * 4] = 1
+    col[i * 4 + 1] = 1
+    col[i * 4 + 2] = 1
+    col[i * 4 + 3] = out.alpha[i]
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 4))
+  g.computeBoundingSphere()
+  return g
+}
+
+const extrudeCache = new Map<string, THREE.BufferGeometry>()
+
+/** Rounded-rectangle prism from z = 0 to z = 1 (board thickness), cached. */
+export function roundedPrismGeometry(w: number, h: number, r: number): THREE.BufferGeometry {
+  const key = `${w.toFixed(4)}|${h.toFixed(4)}|${r.toFixed(4)}`
+  let g = extrudeCache.get(key)
+  if (g) return g
+  const s = new THREE.Shape()
+  const x = -w / 2
+  const y = -h / 2
+  r = Math.min(r, w / 2, h / 2)
+  s.moveTo(x + r, y)
+  s.lineTo(x + w - r, y)
+  s.quadraticCurveTo(x + w, y, x + w, y + r)
+  s.lineTo(x + w, y + h - r)
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  s.lineTo(x + r, y + h)
+  s.quadraticCurveTo(x, y + h, x, y + h - r)
+  s.lineTo(x, y + r)
+  s.quadraticCurveTo(x, y, x + r, y)
+  g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false, curveSegments: 4 })
+  extrudeCache.set(key, g)
+  return g
+}
+
+export function disposeExtrudeCache(): void {
+  for (const g of extrudeCache.values()) g.dispose()
+  extrudeCache.clear()
+}

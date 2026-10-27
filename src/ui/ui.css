@@ -270,7 +270,10 @@
 .side-tabs {
   position: absolute;
   top: calc(0.4em + env(safe-area-inset-top, 0px));
-  right: 0;
+  /* The original keeps every tab ~10 px (at 1080p, ~0.35em) off the right edge, with its
+     drop shadow in that gap; the column's padding keeps the shadow inside its clip box. */
+  right: calc(0.12em + env(safe-area-inset-right, 0px));
+  padding-right: 0.23em;
   bottom: calc(0.4em + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
@@ -335,9 +338,8 @@
 }
 
 .tab-star {
-  width: 2em;
-  height: 2em;
-  margin-right: 0.5em;
+  width: 2.1em;
+  height: 2.1em;
   border-radius: 0.3em;
   font-size: 1em;
   font-family: var(--sans);
@@ -350,9 +352,8 @@
 }
 
 .tab-round {
-  width: 2em;
-  height: 2em;
-  margin-right: 0.5em;
+  width: 2.1em;
+  height: 2.1em;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -375,6 +376,17 @@
   background-size: 0.52em 0.52em;
   box-shadow: inset 0 0 0 0.07em #8f98a8;
 }
+/* Seen from black's side, the tabs turn dark (recording, 18.5 s). */
+.side-tabs.persp-black .tab-star:not(.active),
+.side-tabs.persp-black .tab-vert:not(.active) {
+  --fill: var(--ink-dark-ui);
+  --lip: #2c2c33;
+  color: var(--ui-fill-hi);
+}
+.side-tabs.persp-black .tab-star:not(.active):hover,
+.side-tabs.persp-black .tab-vert:not(.active):hover {
+  --fill: #4a4a55;
+}
 .tab-cycle.black {
   --fill: var(--ink-dark-ui);
   --lip: #2c2c33;
@@ -383,9 +395,8 @@
 
 .tab-vert {
   writing-mode: vertical-rl;
-  width: 1.62em;
+  width: 1.65em;
   padding: 0.5em 0.15em 0.55em 0;
-  margin-right: -0.15em;
   border-radius: 0.8em;
   font-size: 1.27em;
   line-height: 1;

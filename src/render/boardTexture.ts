@@ -1,5 +1,6 @@
 // Draws one board (frame, squares, highlights, coordinates, pieces) to a canvas.
 
+import type { Piece } from '../engine/types'
 import type { SquareHighlight } from './types'
 import type { BoardPlacement, FrameStyle } from './layout'
 import { COLORS, CORNER_THICK, CORNER_THIN, FADE_FRAME, FADE_PIECES, FADE_SQUARES, FRAME_RIM } from './constants'
@@ -17,7 +18,20 @@ const PRIORITY: Record<SquareHighlight, number> = {
   hover: 0,
 }
 
-export function textureKey(p: BoardPlacement, flip: boolean, tier: number, piecesReady: boolean): string {
+/** Temporary changes to the pieces drawn on a board (piece motion): squares to leave empty / draw instead. */
+export interface PieceOverride {
+  /** Square indices (y * width + x) drawn without their piece. */
+  hide: number[]
+  /** Pieces drawn on squares instead of the board's own (e.g. a captured piece until the mover lands). */
+  show: { idx: number; piece: Piece }[]
+}
+
+export function overrideKey(ov: PieceOverride | null | undefined): string {
+  if (!ov) return ''
+  return `|h${ov.hide.join(',')}|s${ov.show.map((s) => `${s.idx}${s.piece.color[0]}${s.piece.type}`).join(',')}`
+}
+
+export function textureKey(p: BoardPlacement, flip: boolean, tier: number, piecesReady: boolean, ov?: PieceOverride | null): string {
   let hk = ''
   if (p.highlights.length) {
     const parts: string[] = []
@@ -25,7 +39,7 @@ export function textureKey(p: BoardPlacement, flip: boolean, tier: number, piece
     parts.sort()
     hk = parts.join(';')
   }
-  return `${tier}|${p.frame}|${p.thick ? 1 : 0}|${p.faded ? 1 : 0}|${flip ? 1 : 0}|${piecesReady ? 1 : 0}|${hk}`
+  return `${tier}|${p.frame}|${p.thick ? 1 : 0}|${p.faded ? 1 : 0}|${flip ? 1 : 0}|${piecesReady ? 1 : 0}|${hk}${overrideKey(ov)}`
 }
 
 function frameColors(frame: FrameStyle, thick: boolean): { body: string; rim: string } {
@@ -68,7 +82,7 @@ export function canvasSize(p: BoardPlacement, tier: number): { cw: number; ch: n
   return { cw: Math.max(8, Math.round((tier * p.w) / longer)), ch: Math.max(8, Math.round((tier * p.h) / longer)) }
 }
 
-export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: boolean, tier: number): void {
+export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: boolean, tier: number, ov?: PieceOverride | null): void {
   const { cw, ch } = canvasSize(p, tier)
   if (canvas.width !== cw) canvas.width = cw
   if (canvas.height !== ch) canvas.height = ch
@@ -156,9 +170,12 @@ export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: bo
   // Pieces
   ctx.globalAlpha = p.faded ? FADE_PIECES : 1
   const spriteSize = Math.round(sq)
+  const hidden = ov ? new Set(ov.hide) : null
+  const shown = ov ? new Map(ov.show.map((s) => [s.idx, s.piece])) : null
   for (let y = 0; y < b.height; y++) {
     for (let x = 0; x < b.width; x++) {
-      const pc = b.squares[y * b.width + x]
+      const idx = y * b.width + x
+      const pc = shown?.get(idx) ?? (hidden?.has(idx) ? null : b.squares[idx])
       if (!pc) continue
       const sprite = pieceSprite(pc.type, pc.color, spriteSize)
       if (!sprite) continue

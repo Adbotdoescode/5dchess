@@ -340,7 +340,7 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
         )}
 
         {/* right-edge column */}
-        <div className="side-tabs">
+        <div className={`side-tabs ${ctrl.perspective === 'black' ? 'persp-black' : ''}`}>
           <button
             className={`tab tab-star ${menuOpen ? 'active' : ''}`}
             aria-label="Game menu"
@@ -361,10 +361,20 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
           >
             <span className="checker" />
           </button>
-          <button className={`tab tab-vert ${ctrl.viewFilter === 'history' ? 'active' : ''}`} onClick={() => ctrl.toggleView('history')}>
+          <button
+            className={`tab tab-vert ${ctrl.viewMode === 'history' ? 'active' : ''}`}
+            aria-pressed={ctrl.viewMode === 'history'}
+            title="History View (T)"
+            onClick={() => ctrl.toggleView('history')}
+          >
             History View
           </button>
-          <button className={`tab tab-vert ${ctrl.viewFilter === 'parallel' ? 'active' : ''}`} onClick={() => ctrl.toggleView('parallel')}>
+          <button
+            className={`tab tab-vert ${ctrl.viewMode === 'parallel' ? 'active' : ''}`}
+            aria-pressed={ctrl.viewMode === 'parallel'}
+            title="Parallel View (Y)"
+            onClick={() => ctrl.toggleView('parallel')}
+          >
             Parallel View
           </button>
           <button className={`tab tab-vert ${ctrl.flipped ? 'active' : ''}`} onClick={() => ctrl.flip()}>
@@ -528,15 +538,23 @@ function BoardDecor({ ctrl, rendererRef }: { ctrl: GameController; rendererRef: 
   const badgeGreen = !!me && result.kind === 'checkmate' && result.winner === me
   useEffect(() => {
     let raf = 0
-    const place = (el: HTMLElement | null, x: number, y: number, w: number, h: number) => {
+    // style writes only when something changed (no per-frame style invalidation)
+    const last = new WeakMap<HTMLElement, string>()
+    const place = (el: HTMLElement | null, x: number, y: number, w: number, h: number, extra?: () => void) => {
       if (!el) return
+      const k = `${Math.round(x - w / 2)},${Math.round(y - h / 2)},${Math.round(w)},${Math.round(h)}`
+      if (last.get(el) === k) return
+      last.set(el, k)
       el.style.display = ''
       el.style.transform = `translate(${Math.round(x - w / 2)}px, ${Math.round(y - h / 2)}px)`
       el.style.width = `${Math.round(w)}px`
       el.style.height = `${Math.round(h)}px`
+      extra?.()
     }
     const hide = (el: HTMLElement | null) => {
-      if (el) el.style.display = 'none'
+      if (!el || last.get(el) === 'hidden') return
+      last.set(el, 'hidden')
+      el.style.display = 'none'
     }
     const tick = () => {
       raf = requestAnimationFrame(tick)
@@ -562,8 +580,9 @@ function BoardDecor({ ctrl, rendererRef }: { ctrl: GameController; rendererRef: 
         if (!br || br.sq < 4) return hide(el)
         const s = Math.max(br.sq * 1.15, 16)
         const out = br.sq * 0.5 + br.sq * 0.3
-        place(el, br.maxX + out, br.minY - out, s, s)
-        if (el) el.style.fontSize = `${Math.round(s * 0.72)}px`
+        place(el, br.maxX + out, br.minY - out, s, s, () => {
+          if (el) el.style.fontSize = `${Math.round(s * 0.72)}px`
+        })
       })
     }
     raf = requestAnimationFrame(tick)
@@ -574,7 +593,7 @@ function BoardDecor({ ctrl, rendererRef }: { ctrl: GameController; rendererRef: 
     <div className="board-decor">
       <button
         ref={histRef}
-        className={`float-btn ${reach.time ? 'go' : ''} ${ctrl.viewFilter === 'history' ? 'active' : ''}`}
+        className={`float-btn ${reach.time ? 'go' : ''} ${ctrl.viewMode === 'history' ? 'active' : ''}`}
         style={{ display: 'none' }}
         aria-label="History View"
         title="History View (T)"
@@ -587,7 +606,7 @@ function BoardDecor({ ctrl, rendererRef }: { ctrl: GameController; rendererRef: 
       </button>
       <button
         ref={parRef}
-        className={`float-btn ${reach.timelines ? 'go' : ''} ${ctrl.viewFilter === 'parallel' ? 'active' : ''}`}
+        className={`float-btn ${reach.timelines ? 'go' : ''} ${ctrl.viewMode === 'parallel' ? 'active' : ''}`}
         style={{ display: 'none' }}
         aria-label="Parallel View"
         title="Parallel View (Y)"
@@ -625,7 +644,9 @@ function ClockPanel({ ctrl }: { ctrl: GameController }) {
     const tick = () => {
       const v = ctrl.clockView()
       ctrl.tickClock(v)
-      const text = v ? `${Math.ceil(v.white / 100)}|${Math.ceil(v.black / 100)}|${v.running}|${v.flagged}|${Math.ceil(v.delay / 1000)}` : ''
+      // re-render only when what is shown changes (not every tenth of a second)
+      const low = (ms: number) => ms < 30000
+      const text = v ? `${formatClock(v.white)}|${formatClock(v.black)}|${v.running}|${v.flagged}|${Math.ceil(v.delay / 1000)}|${low(v.white)}|${low(v.black)}` : ''
       if (text !== lastText) {
         lastText = text
         setView(v)

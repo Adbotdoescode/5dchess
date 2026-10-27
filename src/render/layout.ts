@@ -16,6 +16,9 @@ import {
   HEAD_BASE,
   HEAD_HALF,
   HEAD_TIP,
+  LABEL_RIGHT,
+  TAIL_FADE,
+  TURN_LABEL_DROP,
 } from './constants'
 
 export type FrameStyle = 'white' | 'black' | 'pending' | 'pending-move' | 'check'
@@ -55,6 +58,17 @@ export interface TimelinePlacement {
   head: [Vec2, Vec2, Vec2]
   y: number
   endX: number
+  /** Starting timelines fade in over this length at the start of the band (0 = none). */
+  tail: number
+}
+
+/** Faint world-anchored labels on the floor: timeline names ("0L") and turns ("T1"). */
+export interface FloorLabel {
+  text: string
+  /** Anchor point: right edge (timeline labels) or centre (turn labels), vertically centred. */
+  x: number
+  y: number
+  align: 'right' | 'center'
 }
 
 export interface MarkerPlacement {
@@ -84,6 +98,14 @@ export interface Layout {
   bounds: { minX: number; maxX: number; minY: number; maxY: number }
   /** Bounds of the present column over active timelines. */
   presentBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  /** Timeline labels along the right of the multiverse and turn labels below it. */
+  labels: FloorLabel[]
+}
+
+/** Notation name of a timeline row that may not exist yet (5D PGN; even variants use +0/-0). */
+export function timelineName(l: number): string {
+  if (Number.isInteger(l)) return `${l > 0 ? '+' : l < 0 ? '-' : ''}${Math.abs(l)}L`
+  return `${l > 0 ? '+' : '-'}${Math.abs(l) - 0.5}L`
 }
 
 export const boardKey = (l: number, t: number): string => `${l}:${t}`
@@ -131,6 +153,14 @@ function timelinePath(
 ): Vec2[] {
   if (!src || Math.abs(src.y - y) < 1e-6) {
     const startX = src ? src.x : firstX - BAND_LEAD
+    if (!src) {
+      // starting timelines fade in from the left (the original's soft tail)
+      return [
+        { x: startX, y },
+        { x: startX + TAIL_FADE, y },
+        { x: Math.max(headBaseX, startX + TAIL_FADE + 0.01), y },
+      ]
+    }
     return [
       { x: startX, y },
       { x: headBaseX, y },
@@ -253,6 +283,7 @@ export function computeLayout(model: RenderModel): Layout {
       ],
       y,
       endX,
+      tail: src ? 0 : TAIL_FADE,
     })
     maxX = Math.max(maxX, endX + HEAD_TIP)
     minX = Math.min(minX, path[0].x)
@@ -311,6 +342,37 @@ export function computeLayout(model: RenderModel): Layout {
   }
 
   const cellWidth = parallel ? 1 : 2
+
+  // Floor labels (world-anchored, as in the original): timeline names right of the
+  // furthest arrow tip, one row beyond the outermost timeline on each side; turn labels
+  // below the lowest timeline row.
+  const labels: FloorLabel[] = []
+  if (snap.timelines.length) {
+    let lMin = Infinity
+    let lMax = -Infinity
+    let rowMin = Infinity
+    let endMax = -Infinity
+    let tMin = Infinity
+    let tMax = -Infinity
+    const names = new Map<number, string>()
+    for (const tl of snap.timelines) {
+      lMin = Math.min(lMin, tl.l)
+      lMax = Math.max(lMax, tl.l)
+      rowMin = Math.min(rowMin, rowY(tl.l, persp))
+      const endT = tl.startT + tl.boards.length - 1
+      endMax = Math.max(endMax, columnX(endT, parallel))
+      tMin = Math.min(tMin, tl.startT)
+      tMax = Math.max(tMax, endT)
+      names.set(tl.l, `${tl.label}L`)
+    }
+    const lx = endMax + LABEL_RIGHT
+    for (let l = lMin - 1; l <= lMax + 1 + 1e-9; l++) labels.push({ text: names.get(l) ?? timelineName(l), x: lx, y: rowY(l, persp), align: 'right' })
+    const ty = rowMin - TURN_LABEL_DROP
+    const t0 = Math.floor(tMin / 2)
+    const t1 = Math.floor(tMax / 2) + 1
+    for (let T = Math.max(0, t0); T <= t1 && T - t0 < 2000; T++) labels.push({ text: `T${T}`, x: -0.5 + (T + 0.5) * cellWidth, y: ty, align: 'center' })
+  }
+
   return {
     boards,
     boardsByKey,
@@ -327,6 +389,7 @@ export function computeLayout(model: RenderModel): Layout {
     flip,
     bounds: { minX, maxX, minY, maxY },
     presentBounds: { minX: presentX - 0.5, maxX: pMaxX + 0.5, minY: pMinY - 0.5, maxY: pMaxY + 0.5 },
+    labels,
   }
 }
 

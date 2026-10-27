@@ -10,7 +10,7 @@ const logEl = $('log')
 const sel = $<HTMLSelectElement>('fixture')
 const flip = $<HTMLInputElement>('flip')
 const filter = $<HTMLSelectElement>('filter')
-const three = $<HTMLInputElement>('three')
+const viewSel = $<HTMLSelectElement>('view')
 const anim = $<HTMLInputElement>('anim')
 
 const params = new URLSearchParams(location.search)
@@ -36,7 +36,7 @@ function model(): RenderModel {
     ...base,
     perspective: flip.checked ? 'black' : 'white',
     viewFilter: filter.value as RenderModel['viewFilter'],
-    cameraMode: three.checked ? '3d' : '2d',
+    viewMode: viewSel.value as RenderModel['viewMode'],
     animations: anim.checked,
     highlights: [...base.highlights, ...extra],
   }
@@ -71,7 +71,7 @@ renderer.setEvents({
 })
 
 sel.onchange = () => setFixture(sel.value)
-flip.onchange = filter.onchange = three.onchange = anim.onchange = update
+flip.onchange = filter.onchange = viewSel.onchange = anim.onchange = update
 $('present').onclick = () => renderer.focusPresent()
 $('advance').onclick = () => {
   // append a board to the active timeline with the earliest end (visual only)
@@ -108,7 +108,7 @@ $('advance').onclick = () => {
 declare global {
   interface Window {
     __demo: {
-      setFixture(id: string, opts?: { flip?: boolean; filter?: string; three?: boolean; anim?: boolean }): void
+      setFixture(id: string, opts?: { flip?: boolean; filter?: string; view?: string; anim?: boolean }): void
       renderer: MultiverseRenderer
       focusBoard(l: number, t: number): void
     }
@@ -118,7 +118,7 @@ window.__demo = {
   setFixture(id, opts = {}) {
     flip.checked = !!opts.flip
     filter.value = opts.filter ?? 'all'
-    three.checked = !!opts.three
+    viewSel.value = opts.view ?? '2d'
     anim.checked = opts.anim ?? true
     setFixture(id)
   },

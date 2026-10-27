@@ -27,7 +27,7 @@ for (const spec of list) {
       window.__demo.setFixture(id, {
         flip: flags.includes('flip'),
         filter: flags.includes('history') ? 'history' : flags.includes('parallel') ? 'parallel' : 'all',
-        three: flags.includes('3d'),
+        view: flags.includes('3d') ? 'parallel' : '2d',
         anim: false,
       }),
     [id, flags],

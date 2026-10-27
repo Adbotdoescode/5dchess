@@ -33,7 +33,6 @@ export function SettingsPanel({ onClose }: { onClose(): void }) {
         </div>
         <Check label="Animations" checked={s.animations} onChange={(v) => updateSettings({ animations: v })} />
         <Check label="Auto perspective flip" checked={s.autoFlip} onChange={(v) => updateSettings({ autoFlip: v })} />
-        <Check label="Tilted 3D camera" checked={s.cameraMode === '3d'} onChange={(v) => updateSettings({ cameraMode: v ? '3d' : '2d' })} />
         <Check label="Travel arrows for every turn" checked={s.allArrows} onChange={(v) => updateSettings({ allArrows: v })} />
         <Check label="Move highlights on past boards" checked={s.historyHighlights} onChange={(v) => updateSettings({ historyHighlights: v })} />
         <div className="meta">

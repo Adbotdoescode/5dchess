@@ -4,6 +4,12 @@
 
 import type { Color, MultiverseSnapshot, Pos, Check } from '../engine/types'
 
+/**
+ * Camera view, as the original's right-edge tabs: the flat top-down view, or one of
+ * the two animated 3D views (boards stand up like cards on raised tracks).
+ */
+export type ViewMode = '2d' | 'history' | 'parallel'
+
 export type ArrowKind =
   /** Submitted move on the last turn (blue/purple travel arrow in the game). */
   | 'last-move'
@@ -39,14 +45,39 @@ export interface HighlightedSquare {
   kind: SquareHighlight
 }
 
-/** Which boards to fade, mirroring the in-game toggles. */
+/** Which boards to fade (independent of the camera view, see ViewMode). */
 export type ViewFilter =
   /** Everything at full opacity. */
   | 'all'
-  /** "History View": fade boards of the opponent's color (only show boards `forColor` could move on/into). */
+  /** Fade boards of the opponent's color (a piece is selected: only boards `filterColor` can move on/into stay). */
   | 'history'
-  /** "Parallel View": show only boards at the same half-turn parity as the selected piece's board, packed. */
+  /** Legacy: show only boards at the half-turn parity of `filterColor`, packed into full-turn columns. */
   | 'parallel'
+
+/**
+ * One move to animate: the piece glides from `from` to `to` while the boards the move
+ * created slide out from behind their predecessors (time-travel moves fly along the
+ * move arrow between boards).
+ */
+export interface PieceMotion {
+  /** Square the piece leaves, on the board it moved from (before the move). */
+  from: Pos
+  /** Square it lands on, on the board it moved to (before the move). */
+  to: Pos
+  /** Board created on the source timeline (from.l, from.t + 1). */
+  fromBoard: { l: number; t: number }
+  /** Board created by the arrival of a time-travel / cross-timeline move (absent for spatial moves). */
+  toBoard?: { l: number; t: number }
+}
+
+/** A batch of moves to animate once (identified by `id`). */
+export interface MotionBatch {
+  /** Changes whenever there is something new to animate; a batch is played once. */
+  id: number
+  moves: PieceMotion[]
+  /** Undo: play the moves backwards (the boards they created are already gone from the model). */
+  reverse?: boolean
+}
 
 export interface RenderModel {
   snapshot: MultiverseSnapshot
@@ -70,8 +101,15 @@ export interface RenderModel {
   filterColor: Color
   /** Animate travel/board creation. */
   animations: boolean
-  /** 2D top-down (default) or tilted 3D camera. */
-  cameraMode: '2d' | '3d'
+  /**
+   * Camera view (default '2d'). Changing it animates the camera (and the boards standing
+   * up / lying down) into the new view, as the original's History / Parallel View tabs.
+   */
+  viewMode?: ViewMode
+  /** @deprecated Use `viewMode`. '3d' maps to 'parallel' when `viewMode` is absent. */
+  cameraMode?: '2d' | '3d'
+  /** Optional: moves to animate (piece glides, board slides); see MotionBatch. */
+  motion?: MotionBatch
   /** Optional background tint: darker once the game is over (as in the original). Default 'default'. */
   background?: 'default' | 'ended'
 }
@@ -105,17 +143,42 @@ export interface ScreenRect {
 export interface HudLayout {
   /** Framing (focusPresent / focusBoard) keeps boards out of these margins. */
   insets: ViewInsets
-  /** Background labels (T1, T2, ...) are not drawn where they would collide with these (e.g. the status text). */
+  /** Legacy: screen areas covered by HUD text (labels are now world-anchored, as in the original). */
   avoid?: ScreenRect[]
+}
+
+/** The camera as it is right now (see MultiverseRenderer.getView). */
+export interface ViewState {
+  /** View the camera rests in or is moving to. */
+  mode: ViewMode
+  /** True while moving between views. */
+  transitioning: boolean
+  /** Camera target on the floor (world units) and zoom (CSS px per world unit). */
+  cx: number
+  cy: number
+  zoom: number
+  /** Camera elevation above the floor and look direction (radians; 2D: PI/2 and PI/2). */
+  elevation: number
+  azimuth: number
+  /** View size in CSS px. */
+  width: number
+  height: number
+  /** Column-major 4x4 view-projection matrix (world -> clip space), orthographic. */
+  viewProjection: number[]
 }
 
 export interface MultiverseRenderer {
   /** Replace the displayed model; renderer diffs and animates as needed. */
   setModel(model: RenderModel): void
-  /** Smoothly pan the camera to centre a board. */
-  focusBoard(l: number, t: number): void
+  /** Smoothly pan the camera to centre a board (`instant`: jump there). */
+  focusBoard(l: number, t: number, opts?: { instant?: boolean }): void
   /** Pan/zoom so the present and all active timelines are visible. */
   focusPresent(): void
+  /**
+   * Optional: ease the camera just enough (pan first, zoom out only if needed) to keep the
+   * boards the player must move on next comfortably in view. Gentler than focusPresent.
+   */
+  followPresent?(): void
   setEvents(events: RendererEvents): void
   /**
    * Optional: CSS pixel position (relative to the container's top-left) of the
@@ -129,6 +192,13 @@ export interface MultiverseRenderer {
   zoomBy?(factor: number): void
   /** Optional: tell the renderer which screen areas the HUD covers (see HudLayout). */
   setHud?(hud: HudLayout): void
+  /** Optional: the current camera (e.g. for a full-screen overlay that takes over for a while). */
+  getView?(): ViewState
+  /**
+   * Optional: pause (false) / resume (true) pointer and wheel input on the view, e.g. while
+   * an overlay plays. Paused input is ignored (no clicks, hover, pan or zoom).
+   */
+  setInputEnabled?(enabled: boolean): void
   /** Must be called when the container resizes (renderer may also observe itself). */
   resize(): void
   dispose(): void
