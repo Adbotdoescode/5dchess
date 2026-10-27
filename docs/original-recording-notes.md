@@ -59,6 +59,11 @@ Key frames: t = 11.5 s (single board), 72 s (big multiverse).
 - **The camera** follows new boards and the opponent's moves with smooth easing.
 - Tentative-board frames: yellow for normal moves and blue for travel (already done).
 
+## Piece animation and camera follow (owner feedback)
+
+- Pieces must animate when they move: they glide to the destination as the new board slides out, captures disappear, and travel/jump moves follow the move arrow between boards. This applies to your own moves, the opponent's incoming moves and undo, and respects the animations toggle.
+- After every move (tentative move, submit, opponent action) the camera automatically eases "forward" (to the right, and into new timelines) to keep the new boards and the boards you must move on in view. The player shouldn't have to pan manually. Don't fight an active drag.
+
 ## Camera bounds (owner feedback)
 
 The original doesn't let you zoom out very far, or pan far away from the multiverse. If you drag away, it pulls you back. Ours must have a minimum and maximum zoom, plus soft (rubber-band) pan bounds around the multiverse's bounding box that spring back on release. This applies in 2D and in both 3D views.
