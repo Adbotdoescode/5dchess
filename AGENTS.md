@@ -42,11 +42,19 @@ Rules for module boundaries:
 - Notation: 5D PGN as used by the open-source community (e.g. `(0T1)Nb1c3`, `(0T7)Qd1>>(0T5)d3`).
 - Tests are differential-checked against the AGPL `5d-chess-js` package (devDependency only; never imported from `src/` app code).
 
-## Online play (Supabase)
+## Online play (Supabase): server-authoritative
 
-- Table `public.games` has RLS enabled and **no policies**; clients never touch it directly. All access goes through security-definer RPCs: `create_game`, `join_game`, `get_game`, `submit_action`, `set_result`. A seat is owned by whoever holds its random token (stored hashed; the client keeps it in localStorage).
-- Live updates go over a Realtime broadcast channel `game:<CODE>` (with presence). The database is the source of truth; broadcasts are hints that the client reconciles with `get_game`.
-- Both clients run the same engine and validate every action they receive.
+- **Data access:** table `public.games` has RLS enabled and **no policies**, so clients never touch it directly. A seat belongs to whoever holds its random token; the server stores only a hash, and the client keeps the token in localStorage.
+- **Edge Function `game-action`** (`supabase/functions/game-action`, `verify_jwt=false`) is the ONLY way to create games, submit actions and claim results.
+  - It authenticates the seat token, replays the stored actions with a bundled copy of our engine, and rejects illegal actions with HTTP 422.
+  - It stores the engine's normalized copy of each action and computes `nextActiveTimelines` itself.
+  - It detects checkmate/stalemate in the background, with a CPU budget of about 1.6 s, and records the result.
+- **RPCs:** the raw `create_game`, `submit_action` and `set_result` are callable only by the service role. Public, token-checked RPCs: `join_game`, `get_game`, `offer_draw`, `answer_draw`, `cancel_game`, `offer_rematch`.
+- **Draws and rematches:** a draw needs a stored offer from the other seat. Draw offers, rematch offers and rematch codes are persisted, so they survive reloads.
+- **Engine changes require a redeploy:** run `npm run build:edge` (bundles the engine into `supabase/functions/_shared/engine.js`), then redeploy `game-action` with the Supabase MCP `deploy_edge_function`. The server must run the same engine as the client.
+- **Live updates** go over the Realtime broadcast channel `game:<CODE>` (with presence). Broadcasts only trigger a database re-read, so they're hints, never trusted.
+- **Clocks:** the original's main time plus "+N/L" delay (N seconds × active timelines at the start of each turn). This is computed identically in `src/net/clock.ts` (`computeClocks`) and SQL `_clock_remaining_ms`; change both together.
+- **Tests:** `NET_LIVE=1 npx vitest run src/net/live.test.ts` runs the live end-to-end test against the real project. It cleans up after itself.
 
 ## Licensing — important
 
