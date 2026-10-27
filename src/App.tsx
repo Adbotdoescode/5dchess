@@ -1,14 +1,13 @@
 // App shell: menu ↔ game routing and the online session lifecycle
 // (create / join / ?join= links / refresh-resume / rematch).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Game, VARIANTS } from './engine'
 import type { Color } from './engine'
 import { CLOCK_PRESETS, online } from './net'
 import type { ClockPresetId, OnlineSession } from './net'
 import { GameController } from './ui/controller'
 import type { LocalSave } from './ui/controller'
-import { GameScreen } from './ui/GameScreen'
 import { Menu, WaitingRoom } from './ui/Menu'
 import { RANDOM_VARIANT } from './ui/setup'
 import type { MenuView } from './ui/Menu'
@@ -43,6 +42,35 @@ function loadLocalSave(): LocalSave | null {
 
 let booted = false
 
+// The game screen pulls in the renderer and three.js: load it on demand (and
+// preload it as soon as the player heads for a game).
+const loadGameScreen = () => import('./ui/GameScreen')
+// After a new deploy, a page opened earlier asks for chunk names that no longer
+// exist. Reload once to pick up the new build (game state is persisted, so this
+// is safe); the session flag prevents a reload loop if the network is down.
+const RELOAD_FLAG = '5dchess:chunk-reload'
+const GameScreen = lazy(() =>
+  loadGameScreen().then(
+    (m) => {
+      try { sessionStorage.removeItem(RELOAD_FLAG) } catch { /* storage unavailable */ }
+      return { default: m.GameScreen }
+    },
+    (err: unknown) => {
+      let reloaded = false
+      try {
+        reloaded = sessionStorage.getItem(RELOAD_FLAG) === '1'
+        if (!reloaded) sessionStorage.setItem(RELOAD_FLAG, '1')
+      } catch { reloaded = true }
+      if (!reloaded) {
+        location.reload()
+        return new Promise<never>(() => {})
+      }
+      throw err
+    },
+  ),
+)
+const preloadGameScreen = (): void => void loadGameScreen().catch(() => {})
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'menu', view: { kind: 'main' } })
   const [toasts, toast] = useToasts()
@@ -50,6 +78,9 @@ export default function App() {
   const [, setSaveRev] = useState(0)
   const sessionRef = useRef<OnlineSession | null>(null)
   const hasSave = loadLocalSave() !== null
+  useEffect(() => {
+    if (hasSave) preloadGameScreen()
+  }, [hasSave])
 
   const toMenu = useCallback((view: MenuView = { kind: 'main' }) => {
     setScreen({ kind: 'menu', view })
@@ -182,6 +213,7 @@ export default function App() {
     window.addEventListener('pointerdown', unlock, { once: true })
     window.addEventListener('keydown', unlock, { once: true })
     const code = online.parseJoinCode()
+    if (code || loadJson<string>(KEYS.activeOnline)) preloadGameScreen()
     if (code) {
       const url = new URL(location.href)
       url.searchParams.delete('join')
@@ -219,7 +251,10 @@ export default function App() {
     <>
       <Menu
         view={screen.kind === 'menu' ? screen.view : { kind: 'none' }}
-        setView={(v) => setScreen({ kind: 'menu', view: v })}
+        setView={(v) => {
+          if (v.kind === 'versus') preloadGameScreen()
+          setScreen({ kind: 'menu', view: v })
+        }}
         hasSave={hasSave}
         busy={busy}
         onContinue={continueLocal}
@@ -275,7 +310,21 @@ function GameScreenWithRematch({
     ctrl.setRematchHandler(onRematch)
     return () => ctrl.setRematchHandler(null)
   }, [ctrl, onRematch])
-  return <GameScreen ctrl={ctrl} onExit={onExit} onPlayAgain={onPlayAgain} />
+  return (
+    <Suspense
+      fallback={
+        <div className="game">
+          <div className="connecting">
+            <div className="panel menu-loading">
+              <span className="waiting-dots">Loading</span>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <GameScreen ctrl={ctrl} onExit={onExit} onPlayAgain={onPlayAgain} />
+    </Suspense>
+  )
 }
 
 function WaitingScreen({

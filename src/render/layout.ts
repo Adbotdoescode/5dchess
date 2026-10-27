@@ -18,7 +18,7 @@ import {
   HEAD_TIP,
 } from './constants'
 
-export type FrameStyle = 'white' | 'black' | 'pending' | 'check'
+export type FrameStyle = 'white' | 'black' | 'pending' | 'pending-move' | 'check'
 export type BandStyle = 'active' | 'white' | 'black'
 
 export interface BoardPlacement {
@@ -203,7 +203,9 @@ export function computeLayout(model: RenderModel): Layout {
       const frame: FrameStyle = checkBoards.has(key)
         ? 'check'
         : pending.has(key)
-          ? 'pending'
+          ? model.pendingBoardKinds?.[key] === 'move'
+            ? 'pending-move'
+            : 'pending'
           : colorAt(t)
       const p: BoardPlacement = {
         key,

@@ -270,6 +270,8 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
           </button>
         </div>
 
+        <BoardDecor ctrl={ctrl} rendererRef={rendererRef} />
+
         <div className="status" aria-live="polite">
           {line1 && <div className="sub">{line1}</div>}
           <div>{line2}</div>
@@ -319,6 +321,131 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
         {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
         <Toasts toasts={toasts} />
       </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ board decorations
+
+/** Screen rectangle of a board's squares (centres of the corner squares) and one square's size. */
+function boardRect(r: MultiverseRenderer, l: number, t: number, w: number, h: number) {
+  if (!r.projectSquare) return null
+  const pts = [
+    r.projectSquare({ l, t, x: 0, y: 0 }),
+    r.projectSquare({ l, t, x: w - 1, y: 0 }),
+    r.projectSquare({ l, t, x: 0, y: h - 1 }),
+    r.projectSquare({ l, t, x: w - 1, y: h - 1 }),
+  ]
+  if (pts.some((p) => !p)) return null
+  const xs = pts.map((p) => p!.x)
+  const ys = pts.map((p) => p!.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const sq = w > 1 ? (maxX - minX) / (w - 1) : h > 1 ? (maxY - minY) / (h - 1) : 30
+  return { minX, maxX, minY, maxY, sq }
+}
+
+/**
+ * DOM decorations that follow the camera: the green History/Parallel View buttons
+ * docked to the selected board (SG 04: left edge = History View, top edge = Parallel
+ * View; green when the piece can move that way, grey otherwise), and the end-of-game
+ * "!" badge on the mated player's present board(s).
+ */
+function BoardDecor({ ctrl, rendererRef }: { ctrl: GameController; rendererRef: { current: MultiverseRenderer | null } }) {
+  const histRef = useRef<HTMLButtonElement>(null)
+  const parRef = useRef<HTMLButtonElement>(null)
+  const badgeRefs = useRef<(HTMLDivElement | null)[]>([])
+  const badges = ctrl.endBadges
+  const me = ctrl.myColor
+  const result = ctrl.result
+  const badgeGreen = !!me && result.kind === 'checkmate' && result.winner === me
+  useEffect(() => {
+    let raf = 0
+    const place = (el: HTMLElement | null, x: number, y: number, w: number, h: number) => {
+      if (!el) return
+      el.style.display = ''
+      el.style.transform = `translate(${Math.round(x - w / 2)}px, ${Math.round(y - h / 2)}px)`
+      el.style.width = `${Math.round(w)}px`
+      el.style.height = `${Math.round(h)}px`
+    }
+    const hide = (el: HTMLElement | null) => {
+      if (el) el.style.display = 'none'
+    }
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const r = rendererRef.current
+      const snap = ctrl.snapshot
+      const sel = ctrl.selected
+      const reach = ctrl.selectedReach
+      const rect = r && sel && (reach.time || reach.timelines) ? boardRect(r, sel.l, sel.t, snap.width, snap.height) : null
+      if (rect && rect.sq >= 6) {
+        const s = Math.max(rect.sq, 22)
+        const midX = (rect.minX + rect.maxX) / 2
+        const midY = (rect.minY + rect.maxY) / 2
+        const edge = s * 0.5 + s * 0.42
+        place(histRef.current, rect.minX - edge, midY, s * 1.55, s * 2.35)
+        place(parRef.current, midX, rect.minY - edge, s * 2.35, s * 1.55)
+      } else {
+        hide(histRef.current)
+        hide(parRef.current)
+      }
+      badges.forEach((b, i) => {
+        const el = badgeRefs.current[i]
+        const br = r ? boardRect(r, b.l, b.t, snap.width, snap.height) : null
+        if (!br || br.sq < 4) return hide(el)
+        const s = Math.max(br.sq * 1.15, 16)
+        const out = br.sq * 0.5 + br.sq * 0.3
+        place(el, br.maxX + out, br.minY - out, s, s)
+        if (el) el.style.fontSize = `${Math.round(s * 0.72)}px`
+      })
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [ctrl, rendererRef, badges])
+  const reach = ctrl.selectedReach
+  return (
+    <div className="board-decor">
+      <button
+        ref={histRef}
+        className={`float-btn ${reach.time ? 'go' : ''} ${ctrl.viewFilter === 'history' ? 'active' : ''}`}
+        style={{ display: 'none' }}
+        aria-label="History View"
+        title="History View (T)"
+        onClick={() => ctrl.toggleView('history')}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+          <path d="M4 6l6-2v15l-6 2z" />
+          <path d="M13 4l7 2v15l-7-2z" />
+        </svg>
+      </button>
+      <button
+        ref={parRef}
+        className={`float-btn ${reach.timelines ? 'go' : ''} ${ctrl.viewFilter === 'parallel' ? 'active' : ''}`}
+        style={{ display: 'none' }}
+        aria-label="Parallel View"
+        title="Parallel View (Y)"
+        onClick={() => ctrl.toggleView('parallel')}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+          <path d="M7 5h14l-4 6H3z" />
+          <path d="M7 12h14l-4 6H3z" />
+        </svg>
+      </button>
+      {badges.map((b, i) => (
+        <div
+          key={`${b.l}:${b.t}`}
+          ref={(el) => {
+            badgeRefs.current[i] = el
+          }}
+          className={`end-badge ${badgeGreen ? 'green' : ''}`}
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        >
+          !
+        </div>
+      ))}
     </div>
   )
 }

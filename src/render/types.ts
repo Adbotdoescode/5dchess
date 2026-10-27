@@ -57,6 +57,12 @@ export interface RenderModel {
   checks: Check[]
   /** Boards with a tentative move this action (blue border), keyed "l:t". */
   pendingBoards: string[]
+  /**
+   * Optional: what kind of tentative move created each pending board (keyed "l:t").
+   * 'move' boards get the original's yellow frame, 'travel' (time-travel / cross-board
+   * departure or arrival) the blue-violet one. Boards missing here use blue-violet.
+   */
+  pendingBoardKinds?: Record<string, 'move' | 'travel'>
   /** Board that must still be moved on (pulsing border), keyed "l:t". */
   requiredBoards: string[]
   viewFilter: ViewFilter

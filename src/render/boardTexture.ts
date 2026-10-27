@@ -40,6 +40,8 @@ function frameColors(frame: FrameStyle, thick: boolean): { body: string; rim: st
         : { body: COLORS.frameBlackThin, rim: COLORS.frameBlackThin }
     case 'pending':
       return { body: COLORS.framePendingBody, rim: COLORS.framePendingRim }
+    case 'pending-move':
+      return { body: COLORS.framePendingMoveBody, rim: COLORS.framePendingMoveRim }
     case 'check':
       return { body: COLORS.frameCheckBody, rim: COLORS.frameCheckRim }
   }
@@ -77,7 +79,7 @@ export function drawBoard(canvas: HTMLCanvasElement, p: BoardPlacement, flip: bo
 
   // Frame
   const fc = frameColors(p.frame, p.thick)
-  const corner = (p.thick || p.frame === 'pending' || p.frame === 'check' ? CORNER_THICK : CORNER_THIN) * k
+  const corner = (p.thick || p.frame === 'pending' || p.frame === 'pending-move' || p.frame === 'check' ? CORNER_THICK : CORNER_THIN) * k
   roundRect(ctx, 0, 0, cw, ch, corner)
   ctx.fillStyle = fc.rim
   ctx.fill()

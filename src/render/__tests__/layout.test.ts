@@ -28,6 +28,14 @@ describe('computeLayout', () => {
     expect(C.boardsByKey.get('0:3')!.frame).toBe('check')
   })
 
+  it('pending boards are yellow for ordinary moves and blue-violet for travel', () => {
+    const m = byId('multi')
+    const Y = computeLayout({ ...m, pendingBoardKinds: { '1:9': 'move' } })
+    expect(Y.boardsByKey.get('1:9')!.frame).toBe('pending-move')
+    const B = computeLayout({ ...m, pendingBoardKinds: { '1:9': 'travel' } })
+    expect(B.boardsByKey.get('1:9')!.frame).toBe('pending')
+  })
+
   it('bar colour follows the colour to move at the present; markers sit beyond the last active timeline', () => {
     const L = computeLayout(byId('branch'))
     expect(L.presentX).toBe(3)

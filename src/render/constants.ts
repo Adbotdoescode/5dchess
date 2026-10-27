@@ -45,7 +45,7 @@ export const BAR_TEXT_GAP = 1.5
 /** Clearance between the text and a marker's edge (01.png: ~0.32 rows) or a board. */
 export const LABEL_MARGIN_MARKER = 0.32
 export const LABEL_MARGIN_BOARD = 0.12
-export const BAR_TEXT_SIZE = 0.56
+export const BAR_TEXT_SIZE = 0.52
 
 /** Present markers (where the next timeline of each colour appears). */
 export const MARKER_RADIUS = 0.148
@@ -75,6 +75,9 @@ export const COLORS = {
   frameBlackRim: '#272727',
   framePendingBody: '#8b86db',
   framePendingRim: '#756ade',
+  /** Yellow frame of a tentative board made by an ordinary move (docs/ui-spec.md: #DCCE60 / #C8B63D). */
+  framePendingMoveBody: '#dcce60',
+  framePendingMoveRim: '#c8b63d',
   frameCheckBody: '#d46950',
   frameCheckRim: '#b8543d',
 

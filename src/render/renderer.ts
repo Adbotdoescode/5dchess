@@ -1,7 +1,7 @@
 // The Three.js multiverse renderer. See ./types.ts for the public contract.
 
 import * as THREE from 'three'
-import '@fontsource/eb-garamond/400-italic.css'
+import '@fontsource/crimson-text/400-italic.css'
 import type { Board, Pos } from '../engine/types'
 import type { MultiverseRenderer, RenderModel, RendererEvents } from './types'
 import {
@@ -255,7 +255,7 @@ export class Renderer implements MultiverseRenderer {
     this.scene.add(this.labelGroup)
     this.buildLabelTexture()
     void document.fonts
-      ?.load(`italic 400 64px "EB Garamond"`)
+      ?.load(`italic 400 64px "Crimson Text"`)
       .then(() => {
         if (this.disposed) return
         // the label size depends on the real font metrics: rebuild it (GPU sizes are immutable)
@@ -571,7 +571,7 @@ export class Renderer implements MultiverseRenderer {
   }
 
   private cornerOf(p: BoardPlacement) {
-    return p.thick || p.frame === 'pending' || p.frame === 'check' ? CORNER_THICK : CORNER_THIN
+    return p.thick || p.frame === 'pending' || p.frame === 'pending-move' || p.frame === 'check' ? CORNER_THICK : CORNER_THIN
   }
 
   private removeEntry(e: BoardEntry) {
@@ -842,7 +842,7 @@ export class Renderer implements MultiverseRenderer {
   /** White "The Present" (tinted per bar colour), rotated to read top to bottom. */
   private buildLabelTexture() {
     const k = 320 // px per world unit
-    const font = `italic 400 ${Math.round(BAR_TEXT_SIZE * k)}px "EB Garamond", Garamond, "Times New Roman", serif`
+    const font = `italic 400 ${Math.round(BAR_TEXT_SIZE * k)}px "Crimson Text", "EB Garamond", Garamond, "Times New Roman", serif`
     const c = document.createElement('canvas')
     const ctx0 = c.getContext('2d')!
     ctx0.font = font

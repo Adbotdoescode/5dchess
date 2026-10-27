@@ -30,4 +30,6 @@ export const KEYS = {
   localSave: '5dchess:local-save',
   activeOnline: '5dchess:active-online',
   lastSetup: '5dchess:last-setup',
+  /** + game code: unsubmitted moves of an online game. */
+  pendingPrefix: '5dchess:pending:',
 } as const

@@ -253,9 +253,9 @@
 }
 
 .top-pills .pill {
-  font-size: 1.22em;
-  height: 1.55em;
-  min-width: 7.5em;
+  font-size: 1.28em;
+  height: 1.45em;
+  min-width: 7.2em;
   padding-bottom: 0.1em;
 }
 .top-pills {
@@ -357,14 +357,74 @@
 
 .tab-vert {
   writing-mode: vertical-rl;
-  width: 1.9em;
-  padding: 0.6em 0.2em 0.65em 0;
-  margin-right: -0.2em;
-  border-radius: 0.95em;
-  font-size: 1.1em;
+  width: 1.62em;
+  padding: 0.5em 0.15em 0.55em 0;
+  margin-right: -0.15em;
+  border-radius: 0.8em;
+  font-size: 1.27em;
   line-height: 1;
   white-space: nowrap;
   text-align: center;
+}
+
+.board-decor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.float-btn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22%;
+  display: grid;
+  place-items: center;
+  background: var(--ui-fill);
+  color: var(--ink);
+  box-shadow:
+    inset 0 -0.08em 0 #c9cabf,
+    0.1em 0.14em 0 var(--shadow);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.float-btn.go {
+  background: #8fad8c;
+  box-shadow:
+    inset 0 -0.08em 0 var(--green-lip),
+    0.1em 0.14em 0 var(--shadow);
+}
+.float-btn.active {
+  outline: 0.12em solid var(--ui-fill-hi);
+}
+.float-btn svg {
+  width: 62%;
+  height: 62%;
+}
+.end-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #d0674d;
+  color: var(--ui-fill-hi);
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 0.9em;
+  line-height: 1;
+  box-shadow:
+    0 0 0 0.12em #a94d37 inset,
+    0.08em 0.1em 0 rgba(56, 56, 56, 0.6);
+}
+.end-badge.green {
+  background: #91ac8e;
+  box-shadow:
+    0 0 0 0.12em #6f8c6c inset,
+    0.08em 0.1em 0 rgba(56, 56, 56, 0.6);
 }
 
 .status {
@@ -372,7 +432,7 @@
   left: calc(0.9em + env(safe-area-inset-left, 0px));
   bottom: calc(0.45em + env(safe-area-inset-bottom, 0px));
   max-width: calc(100% - 5em);
-  font-size: 1.72em;
+  font-size: 1.64em;
   line-height: 1.15;
   color: var(--ui-fill-hi);
   text-shadow:
@@ -517,7 +577,7 @@
   color: #3b3b3b;
 }
 .star-menu .hotkeys b {
-  font-weight: 500;
+  font-weight: 400;
 }
 .star-menu .meta {
   font-size: 0.75em;
@@ -570,7 +630,7 @@
 .game-over h2 {
   margin: 0;
   font-size: 1.9em;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.05;
 }
 .game-over .detail {
@@ -676,19 +736,19 @@
   margin: 0;
   font-size: 1em;
   color: var(--ui-fill-hi);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 0.9;
   text-shadow: 0.035em 0.04em 0 var(--shadow);
   pointer-events: none;
 }
 .title .big {
   display: block;
-  font-size: 8.4em;
+  font-size: 7.75em;
   letter-spacing: -0.01em;
 }
 .title .sub {
   display: block;
-  font-size: 3.25em;
+  font-size: 3.3em;
   margin-top: 0.2em;
   text-shadow: 0.05em 0.06em 0 var(--shadow);
 }
@@ -734,7 +794,7 @@
   margin: 0 0 0.25em;
   color: var(--ui-fill-hi);
   font-size: 1.75em;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.1;
   text-shadow: 0.05em 0.06em 0 var(--shadow);
 }
@@ -839,7 +899,7 @@
 }
 .variant-info .name {
   font-style: normal;
-  font-weight: 500;
+  font-weight: 600;
 }
 .mini-boards {
   display: flex;
@@ -1034,7 +1094,7 @@
 }
 .settings h3 {
   margin: 0 0 0.1em;
-  font-weight: 500;
+  font-weight: 400;
   font-size: 1.2em;
 }
 .settings .row {
@@ -1065,7 +1125,7 @@
 .guide h2 {
   margin: 1.2em 0 0.3em;
   font-size: 1.45em;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.15;
   text-align: center;
 }
@@ -1086,6 +1146,9 @@
 .guide ol {
   padding-left: 1.3em;
   margin: 0.3em 0;
+}
+.guide b {
+  font-weight: 600;
 }
 .guide kbd {
   font-family: var(--sans);

@@ -12,7 +12,7 @@ import { detectEnd } from './mate'
 import { getSettings } from './settings'
 import type { Settings } from './settings'
 import { sound } from './sound'
-import { KEYS, saveJson } from './storage'
+import { KEYS, loadJson, removeKey, saveJson } from './storage'
 
 export type Mode =
   | { kind: 'local'; clock: ClockSettings | null }
@@ -70,7 +70,7 @@ export class GameController {
   private cache: {
     rev: number
     snapshot: MultiverseSnapshot
-    decor: { highlights: HighlightedSquare[]; arrows: BoardArrow[]; pendingBoards: string[] }
+    decor: { highlights: HighlightedSquare[]; arrows: BoardArrow[]; pendingBoards: string[]; pendingKinds: Record<string, 'move' | 'travel'> }
     checks: Check[]
     required: string[]
   } | null = null
@@ -99,6 +99,7 @@ export class GameController {
       const info = mode.session.info
       this.game = Game.fromActions(info.variantId, info.actions, GAME_OPTS)
       if (info.result.kind !== 'ongoing') this.game.setResult(info.result)
+      else this.restorePending(this.game)
     } else if (resume) {
       this.game = Game.fromActions(variantId, resume.actions, GAME_OPTS)
       for (const m of resume.pending) {
@@ -236,6 +237,26 @@ export class GameController {
     return this.selected ? this.pieceAt(this.selected) : null
   }
 
+  /** What the selected piece can reach: other turns (History View) / other timelines (Parallel View). */
+  get selectedReach(): { time: boolean; timelines: boolean } {
+    let time = false
+    let timelines = false
+    for (const m of this.dests) {
+      if (m.to.t !== m.from.t) time = true
+      if (m.to.l !== m.from.l) timelines = true
+    }
+    return { time, timelines }
+  }
+
+  /**
+   * Boards that get the "!" badge at the end of the game: the mated player's boards in
+   * the present (green for the winner's view, red otherwise; game_end_you_win/lose).
+   */
+  get endBadges(): { l: number; t: number }[] {
+    if (this.game.result().kind !== 'checkmate') return []
+    return this.game.requiredBoards()
+  }
+
   pieceAt(pos: Pos): Piece | null {
     const b = this.game.board(pos.l, pos.t)
     if (!b || pos.x < 0 || pos.y < 0 || pos.x >= b.width || pos.y >= b.height) return null
@@ -258,6 +279,7 @@ export class GameController {
     const highlights: HighlightedSquare[] = []
     const arrows: BoardArrow[] = []
     const pendingBoards: string[] = []
+    const pendingKinds: Record<string, 'move' | 'travel'> = {}
     const all = g.actionRecords()
     const mark = (rec: MoveRecord, kind: 'moved' | 'travel') => {
       const m = rec.move
@@ -279,10 +301,17 @@ export class GameController {
     for (const rec of g.pendingRecords()) {
       mark(rec, 'moved')
       if (rec.kind !== 'spatial') arrows.push({ from: rec.move.from, to: rec.move.to, kind: 'pending' })
-      pendingBoards.push(bkey(rec.fromBoard.l, rec.fromBoard.t))
-      if (rec.toBoard) pendingBoards.push(bkey(rec.toBoard.l, rec.toBoard.t))
+      const kind = rec.kind === 'spatial' ? 'move' : 'travel'
+      const from = bkey(rec.fromBoard.l, rec.fromBoard.t)
+      pendingBoards.push(from)
+      pendingKinds[from] = kind
+      if (rec.toBoard) {
+        const to = bkey(rec.toBoard.l, rec.toBoard.t)
+        pendingBoards.push(to)
+        pendingKinds[to] = kind
+      }
     }
-    return { highlights, arrows, pendingBoards }
+    return { highlights, arrows, pendingBoards, pendingKinds }
   }
 
   get snapshot(): MultiverseSnapshot {
@@ -314,6 +343,7 @@ export class GameController {
       arrows: c.decor.arrows,
       checks: c.checks,
       pendingBoards: c.decor.pendingBoards,
+      pendingBoardKinds: c.decor.pendingKinds,
       requiredBoards: this.canInteract ? c.required : [],
       viewFilter,
       filterColor: this.selected ? this.game.player : filterColor,
@@ -751,6 +781,7 @@ export class GameController {
           break
         }
       }
+      this.restorePending(g)
     }
     this.game = g
     this.desynced = false
@@ -766,8 +797,37 @@ export class GameController {
   // ---------------------------------------------------------------- persistence
 
   private autosave(): void {
-    if (this.mode.kind !== 'local') return
-    this.saveNow()
+    if (this.mode.kind === 'local') {
+      this.saveNow()
+      return
+    }
+    // online: keep unsubmitted moves across a reload, keyed by game code + action index
+    const key = this.pendingKey()
+    if (!key) return
+    const g = this.game
+    if (g.pendingMoves.length > 0 && this.myTurn) saveJson(key, { index: g.history.length, moves: g.pendingMoves.slice() })
+    else removeKey(key)
+  }
+
+  private pendingKey(): string | null {
+    const s = this.online
+    return s && s.role !== 'spectator' ? `${KEYS.pendingPrefix}${s.info.code}` : null
+  }
+
+  /** Re-apply unsubmitted moves saved before a reload, if they still fit. */
+  private restorePending(g: Game): void {
+    const key = this.pendingKey()
+    if (!key || g.pendingMoves.length > 0 || g.result().kind !== 'ongoing' || this.online?.role !== g.player) return
+    const saved = loadJson<{ index: number; moves: Move[] }>(key)
+    if (!saved || saved.index !== g.history.length || !Array.isArray(saved.moves)) return
+    for (const m of saved.moves) {
+      try {
+        g.makeMove(m)
+      } catch {
+        while (g.undoMove());
+        return
+      }
+    }
   }
 
   saveNow(): void {

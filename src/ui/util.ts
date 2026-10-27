@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from 'react'
 import type { Color, PieceType } from '../engine'
-import { pieceSvg } from '../render'
+// straight from the pieces module (not the renderer entry) so the menu bundle stays free of three.js
+import { pieceSvg } from '../render/pieces'
 
 const glyphCache = new Map<string, string>()
 
