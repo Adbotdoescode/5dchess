@@ -1,6 +1,6 @@
 // Which boards the time-travel cinematic shows, in flight order (pure, unit-tested).
 //
-// In the original (owner's recording 38-43 s, BrodieOnGames 12:49-12:58) the camera
+// In the original the camera
 // tilts the source timeline into a stack of cards and then flies back through every
 // board between the piece's source board and its destination, one board per second,
 // and lands on the destination board. The source board comes first (k = 0), the

@@ -1,5 +1,5 @@
-// In-game screen: the renderer fills the window, with the original's HUD on top
-// (docs/ui-spec.md §3): top-centre pills, right-edge tabs, bottom-left status,
+// In-game screen: the renderer fills the window, with the original's HUD on top:
+// top-centre pills, right-edge tabs, bottom-left status,
 // clocks top-left, the "*" menu and the end-of-game card.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -675,7 +675,7 @@ function ClockPanel({ ctrl }: { ctrl: GameController }) {
   const row = (c: Color) => {
     const running = view.running === c
     const ms = c === 'white' ? view.white : view.black
-    // only the side to move shows its remaining delay (docs/ui-spec.md: "W 20:00+5" / "B 19:54")
+    // only the side to move shows its remaining delay
     const suffix = running && view.delay > 0 ? `+${Math.ceil(view.delay / 1000)}` : ''
     const isOpp = !!session && !!me && c !== me
     return (

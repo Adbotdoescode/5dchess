@@ -1,7 +1,7 @@
 // View modes (2D, History View, Parallel View) as camera + board poses, and the
 // pure math that places boards and the camera for any blend between them.
 //
-// Measured from the owner's recording of the original (docs/original-recording-notes.md):
+// Measured from the original game:
 //  - History View: the camera looks back along time from the future side, a little
 //    towards white's timelines (camera azimuth ~ -30 deg from +x, ~38 deg above the
 //    floor). Boards stand up facing the future (+x), files running along +y.
@@ -130,7 +130,7 @@ export function placeCamera(cam: THREE.OrthographicCamera, p: ViewPose, cx: numb
 /**
  * 3D floor shadow offset per unit of height. In the original's 3D views long shadows
  * fall behind the standing boards (away from the camera), slightly to the left in
- * History View and to the right in Parallel View (recording, 7.5 / 65 / 72 s).
+ * History View and to the right in Parallel View (as in the original).
  */
 export function light3D(p: ViewPose, length = 1.4, out = { x: 0, y: 0 }) {
   const fx = Math.cos(p.azim)

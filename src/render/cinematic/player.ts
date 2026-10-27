@@ -1,4 +1,4 @@
-// The time-travel cinematic (docs/original-recording-notes.md, "Time-travel cinematic"):
+// The time-travel cinematic, as in the original:
 // a self-contained overlay (2D floor canvas + transparent Three.js canvas) placed over the
 // game view. Presentation only: the move is already applied; this just plays and goes.
 //
@@ -65,7 +65,7 @@ export interface LandingCamera {
   cx: number
   cy: number
   zoom: number
-  /** Zoom-out target (CSS px per world unit) and duration, easeOutSine (recording 43.69-44.13 s). */
+  /** Zoom-out target (CSS px per world unit) and duration, easeOutSine (as in the original). */
   zoomOut: number
   zoomOutMs: number
 }

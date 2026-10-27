@@ -1,6 +1,6 @@
-// Timeline of the time-travel cinematic, measured frame by frame from the owner's
-// 75 fps recording of the original (docs/original-recording-notes.md, "Time-travel
-// cinematic"). All times are seconds from the moment the travel move is made.
+// Timeline of the time-travel cinematic, measured frame by frame from the original at
+// 75 fps. All times are seconds from the moment the travel move is made (the
+// parenthesised times are offsets on the reference capture).
 // Pure math, no DOM: unit-tested in __tests__/cinematic.test.ts.
 
 /** HUD (pills, tabs, status text) fades out as the camera starts to move (38.35-38.60 s). */

@@ -1,6 +1,6 @@
 // Menu backdrop approximating the original's blue-grey "time tunnel": twisted
 // checkered rings receding to a pale centre, with chess-piece silhouettes
-// flying out towards the viewer (docs/ui-spec.md §2.1). Plain canvas 2D.
+// flying out towards the viewer. Plain canvas 2D.
 
 import { useEffect, useRef } from 'react'
 import type { Color, PieceType } from '../../engine'

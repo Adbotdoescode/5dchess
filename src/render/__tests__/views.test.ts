@@ -15,7 +15,7 @@ describe('view poses', () => {
     expect(isFlat(POSES.history)).toBe(false)
     expect(POSES.history.tilt).toBeCloseTo(Math.PI / 2)
     expect(POSES.parallel.tilt).toBeCloseTo(Math.PI / 2)
-    // measured from the recording: ~37 deg up; History looks back along time, Parallel across timelines
+    // measured from the original: ~37 deg up; History looks back along time, Parallel across timelines
     for (const p of [POSES.history, POSES.parallel]) expect(THREE.MathUtils.radToDeg(p.elev)).toBeGreaterThan(30)
     const flat = (v: THREE.Vector3) => new THREE.Vector2(v.x, v.y).normalize()
     const fh = flat(cameraBasis(POSES.history).forward)

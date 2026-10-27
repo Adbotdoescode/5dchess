@@ -3,8 +3,8 @@ import { Game, createGame } from '../game'
 import { parsePgn } from '../notation'
 import { VARIANTS } from '../variants'
 
-// Two games played in the original game, transcribed in the 5D PGN specification
-// (adri326/5dchess-notation). Used as test data. One transcription error is fixed:
+// Two games played in the original game, transcribed in community 5D PGN. Used as
+// test data. One transcription error is fixed:
 // move 15 reads "(1T13)Ba4+" in the source, but a bishop on a3 cannot reach a4; the
 // bishop captures on b4 (giving check to d6) and continues 16. (1T14)Bxc5+. Likewise
 // "16. ... (0T14)Bg2" is impossible for the bishop on f7; it went to g6, from where

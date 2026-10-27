@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs'
 
 const out = process.argv[2] ?? 'render-shots'
 const shots = process.argv.slice(3)
-const list = shots.length ? shots : ['branch', 'multi', 'start', 'blog', 'checks', 'checks:flip', 'multi:history', 'multi:parallel', 'multi:3d', 'fairy', 'perf']
+const list = shots.length ? shots : ['branch', 'multi', 'start', 'queen-branch', 'checks', 'checks:flip', 'multi:history', 'multi:parallel', 'multi:3d', 'fairy', 'perf']
 mkdirSync(out, { recursive: true })
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })

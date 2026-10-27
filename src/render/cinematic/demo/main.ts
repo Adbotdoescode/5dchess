@@ -1,7 +1,7 @@
 // Dev harness for the time-travel cinematic (served by Vite at /cinematic-demo.html).
-// URL parameters: preset=owner|custom, variant, piece, color, history, depth, seed,
+// URL parameters: preset=reference|custom, variant, piece, color, history, depth, seed,
 // flip=1, mode=2d|history|parallel, t=<seconds> (freeze at that time), auto=1 (play on
-// load), shot=1 (hide the panel), owner=1 (match the owner's recording framing).
+// load), shot=1 (hide the panel), ref=1 (reference framing).
 import { createRenderer } from '../../index'
 import type { MultiverseRenderer, RenderModel } from '../../types'
 import { VARIANTS, type Color, type PieceType } from '../../../engine'
@@ -44,7 +44,7 @@ setIf(mode, 'mode')
 setIf(speed, 'speed')
 if (params.get('flip') === '1') flip.checked = true
 
-const OWNER_PGN = `[Board "Standard"]
+const REFERENCE_PGN = `[Board "Standard"]
 [Mode "5D"]
 1. d4 / b5
 2. (0T2)Ng1>>(0T1)g3`
@@ -67,7 +67,7 @@ function build(): Scenario | null {
     depth: Number(depth.value),
     perspective: persp,
     seed: Number(seed.value),
-    pgn: preset.value === 'owner' ? OWNER_PGN : undefined,
+    pgn: preset.value === 'reference' ? REFERENCE_PGN : undefined,
   })
   if (typeof r === 'string') {
     log(r)
@@ -81,7 +81,7 @@ function build(): Scenario | null {
   return r
 }
 
-/** The owner's recording framing: the source board centred, 341 px squares at 1022 px height. */
+/** Reference framing: the source board centred, 341 px squares at 1022 px height. */
 function frame(r: Scenario) {
   const L = computeLayout({ ...r.before, viewFilter: 'all' })
   const p = L.boardsByKey.get(`${r.move.from.l}:${r.move.from.t}`)

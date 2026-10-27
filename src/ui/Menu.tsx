@@ -1,4 +1,4 @@
-// Menus in the original's style (docs/ui-spec.md §2): title and pill stack over
+// Menus in the original's style: title and pill stack over
 // the blue time-tunnel backdrop; "Versus"-style panels with tab pills.
 
 import { useEffect, useMemo, useRef, useState } from 'react'

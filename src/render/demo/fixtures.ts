@@ -126,7 +126,7 @@ function fixtureStart(): Fixture {
   return { id: 'start', name: 'Standard start', model: baseModel(s, { requiredBoards: ['0:2'] }) }
 }
 
-/** Like 01.png: white bishop travels back from (0,t6) to (0,t2) creating +1 (tentative). */
+/** White bishop travels back from (0,t6) to (0,t2) creating +1 (tentative). */
 function fixtureBranch(): Fixture {
   const m = line(0, 2, startBoard(0, 2), [['e2e4'], ['e7e5'], ['f1e2'], ['d8f6']]) // t = 2..6
   const t7 = put(m[4], 0, 7, 'e2', null) // the bishop left e2 (tentative)
@@ -142,7 +142,7 @@ function fixtureBranch(): Fixture {
   )
   return {
     id: 'branch',
-    name: 'White branch (01.png)',
+    name: 'White branch',
     model: baseModel(s, {
       pendingBoards: ['0:7', '1:3'],
       arrows: [{ from: P(0, 6, 'e2'), to: P(0, 2, 'e4'), kind: 'pending' }],
@@ -158,7 +158,7 @@ function fixtureBranch(): Fixture {
   }
 }
 
-/** Like 06.png: three timelines, the newest one inactive (white band). */
+/** Three timelines, the newest one inactive (white band). */
 function fixtureMulti(): Fixture {
   const main = line(0, 2, startBoard(0, 2), [['e2e4'], ['e7e5'], ['d1h5'], ['b8c6'], ['f1c4'], ['g8f6']])
   // +1 branched from (0, t2): white queen arrived on c3 at t=3? (black to move first)
@@ -178,7 +178,7 @@ function fixtureMulti(): Fixture {
   )
   return {
     id: 'multi',
-    name: 'Three timelines, inactive (06.png)',
+    name: 'Three timelines, inactive',
     model: baseModel(s, {
       pendingBoards: ['1:9', '2:5'],
       requiredBoards: ['0:8'],
@@ -203,8 +203,8 @@ function fixtureMulti(): Fixture {
   }
 }
 
-/** Blog example: Q(0T7)d1>>(0T3)h5 creates +1 starting at (+1T3) black-to-move. Present t=7. */
-function fixtureBlog(): Fixture {
+/** Queen branch: Q(0T7)d1>>(0T3)h5 creates +1 starting at (+1T3) black-to-move. Present t=7. */
+function fixtureQueenBranch(): Fixture {
   const moves = [
     ['e2e4'],
     ['e7e5'],
@@ -229,8 +229,8 @@ function fixtureBlog(): Fixture {
     { white: false, black: true },
   )
   return {
-    id: 'blog',
-    name: 'Blog: Q(0T7)d1>>(0T3)h5',
+    id: 'queen-branch',
+    name: 'Queen branch: Q(0T7)d1>>(0T3)h5',
     model: baseModel(s, {
       arrows: [{ from: P(0, 14, 'd1'), to: P(0, 6, 'h5'), kind: 'last-move' }],
       highlights: [
@@ -384,7 +384,7 @@ export function fixtures(): Fixture[] {
     fixtureStart(),
     fixtureBranch(),
     fixtureMulti(),
-    fixtureBlog(),
+    fixtureQueenBranch(),
     fixtureChecks(),
     fixtureEven(),
     fixtureFairy(),

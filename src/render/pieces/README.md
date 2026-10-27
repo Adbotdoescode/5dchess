@@ -17,4 +17,4 @@ Drawn for this project in the same style (45x45 viewBox, 1.5 px strokes):
 | C | Common king (non-royal) | king with a ring instead of the cross |
 | Y | Royal queen | queen with the king's cross on the centre point |
 
-No art was taken from the AGPL reference projects (chess-in-5d, 5d-chess-renderer).
+No art was taken from other implementations of this game.

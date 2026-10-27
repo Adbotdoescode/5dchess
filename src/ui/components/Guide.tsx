@@ -200,7 +200,8 @@ export function Guide() {
       <h3>The screen</h3>
       <ul>
         <li>Top centre: Undo Move (or Deselect while a piece is selected) and Submit Moves. When the game is over, Submit Moves turns into Finish Game.</li>
-        <li>Right edge, from the top: the * game menu, the round checkered button (animations on or off), History View, Parallel View, Flip Persp. and the board cycle button.</li>
+        <li>Right edge, from the top: the * game menu, the round time-travel animation button, History View, Parallel View, Flip Persp. and the board cycle button.</li>
+        <li>The round button shows a blue swirl when it is on: your next move through time then plays the full time-travel animation, and the button switches itself off. Click it (or press <kbd>I</kbd>) to turn it on again.</li>
         <li>History View and Parallel View turn the camera into a 3D view where the boards stand up like cards: History View looks back along time, so the boards of each timeline line up one behind the other; Parallel View looks across the timelines, so boards of the same turn line up. Click the green tab again to return to the flat view. The green buttons next to a selected piece's board do the same.</li>
         <li>Flip Persp. turns the view around. In local games the view flips to the player to move after each submit; you can turn this off in the settings.</li>
         <li>Bottom left: whose turn it is. Top left: the clocks, when the game is timed.</li>
@@ -213,7 +214,7 @@ export function Guide() {
         <li>Submit: <kbd>Enter</kbd> or <kbd>F</kbd>.</li>
         <li>Cycle through the boards you can play on: <kbd>Tab</kbd>.</li>
         <li>Pan the camera: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrow keys. Zoom: <kbd>E</kbd> and <kbd>Q</kbd>, or scroll.</li>
-        <li>History View: <kbd>T</kbd>. Parallel View: <kbd>Y</kbd>. Flip perspective: <kbd>U</kbd>.</li>
+        <li>History View: <kbd>T</kbd>. Parallel View: <kbd>Y</kbd>. Flip perspective: <kbd>U</kbd>. Time-travel animation on: <kbd>I</kbd>.</li>
       </ul>
 
       <h2>Playing online</h2>

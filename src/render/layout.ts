@@ -295,7 +295,7 @@ export function computeLayout(model: RenderModel): Layout {
 
   // Markers on the present bar: where each colour's next timeline will appear.
   // The game puts each marker one row beyond that colour's last ACTIVE timeline
-  // (06.png: white's marker sits on the row of its inactive timeline).
+  // (in the original, white's marker sits on the row of its inactive timeline).
   let maxL = 0
   let minL = 0
   for (const tl of snap.timelines) {
@@ -380,7 +380,7 @@ export function computeLayout(model: RenderModel): Layout {
     presentX,
     // The bar shows whose move it is AT the present: after a player has moved on every
     // present board (tentatively), the present shifts to the opponent's column and the
-    // bar turns to that colour, as in the original (see 01.png).
+    // bar turns to that colour, as in the original.
     presentColor: colorAt(snap.present),
     markers,
     cellWidth,

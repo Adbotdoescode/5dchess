@@ -34,16 +34,16 @@ export const HEAD_TIP = 1.0
 export const HEAD_HALF = 0.256
 /** Corner radius of the branch curve (centre line). */
 export const BRANCH_RADIUS = 0.3
-/** How far left of the first board a starting timeline's band begins (01.png / recording: ~1.5 slots). */
+/** How far left of the first board a starting timeline's band begins (original: ~1.5 slots). */
 export const BAND_LEAD = 1.5
 /** ...fading in from transparent over this length (the original's soft tail). */
 export const TAIL_FADE = 0.45
 
-/** Floor labels: timeline names end this far right of the furthest end board (recording: 1.47 slots). */
+/** Floor labels: timeline names end this far right of the furthest end board (original: 1.47 slots). */
 export const LABEL_RIGHT = 1.47
-/** Turn labels sit this far below the lowest timeline row (recording: 1.37 rows). */
+/** Turn labels sit this far below the lowest timeline row (original: 1.37 rows). */
 export const TURN_LABEL_DROP = 1.37
-/** Cap height of the floor labels (world units, recording: ~0.12). */
+/** Cap height of the floor labels (world units, original: ~0.12). */
 export const LABEL_CAP = 0.12
 
 /** "The Present" bar. */
@@ -51,7 +51,7 @@ export const BAR_WIDTH = 0.62
 export const BAR_EDGE = 0.02
 /** Gap between repeats of the "The Present" text in open stretches of the bar (rows). */
 export const BAR_TEXT_GAP = 1.5
-/** Clearance between the text and a marker's edge (01.png: ~0.32 rows) or a board. */
+/** Clearance between the text and a marker's edge (original: ~0.32 rows) or a board. */
 export const LABEL_MARGIN_MARKER = 0.32
 export const LABEL_MARGIN_BOARD = 0.12
 export const BAR_TEXT_SIZE = 0.52
@@ -84,7 +84,7 @@ export const COLORS = {
   frameBlackRim: '#272727',
   framePendingBody: '#8b86db',
   framePendingRim: '#756ade',
-  /** Yellow frame of a tentative board made by an ordinary move (docs/ui-spec.md: #DCCE60 / #C8B63D). */
+  /** Yellow frame of a tentative board made by an ordinary move. */
   framePendingMoveBody: '#dcce60',
   framePendingMoveRim: '#c8b63d',
   frameCheckBody: '#d46950',
@@ -123,7 +123,7 @@ export const COLORS = {
   check: ['#ec8a6c', '#dc775b'],
 } as const
 
-/** History View fade (measured from 04.png): white veil over frame and squares, piece opacity. */
+/** History View fade (measured from the original): white veil over frame and squares, piece opacity. */
 export const FADE_FRAME = 0.68
 export const FADE_SQUARES = 0.56
 export const FADE_PIECES = 0.3

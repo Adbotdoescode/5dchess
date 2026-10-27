@@ -19,11 +19,11 @@ import {
 } from '../cinematic/timing'
 import { VORTEX_LUT, vortexProfile } from '../cinematic/vortex'
 
-// The owner's recording (docs/original-recording-notes.md): the move is made at 38.333 s; the
+// Reference capture of the original: the move is made at 38.333 s; the
 // recorder froze for 0.2 s at 38.735, so later frames are at raw - 38.533 s of animation time.
 const raw = (t: number) => (t < 38.735 ? t - 38.333 : t - 38.533)
 
-describe('time-travel cinematic timing (fitted to the recording)', () => {
+describe('time-travel cinematic timing (fitted to the original)', () => {
   const s = schedule(2) // (0T2)Ng1>>(0T1)g3 passes the source board and T1 black
 
   it('orbit: easeInOutSine from flat to looking back along time', () => {

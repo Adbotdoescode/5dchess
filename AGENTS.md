@@ -1,73 +1,73 @@
-# 5D Chess — project guide for agents
+# 5D Chess: guide for agents
+
+## Keep this file current
+
+Keep this file current. Fix anything here that is outdated, wrong or missing as part of your change; letting it go stale is leaving the work unfinished. The same applies to every skill (`.agents/skills/`, linked as `.claude/skills/`): any skill you notice has gone out of date must be updated too. Keep this file at or under 150 lines.
+
+Maintenance here is **zero-sum**. The line budget is the point, not an accident: a file nobody finishes reading guides nothing. So the test for whether something belongs here is not "is this true and useful" (almost everything is) but:
+
+**Is this worth removing something else to make room for?**
+
+If no, it doesn't go here. If yes, name what you are cutting and cut it in the same change. Only when there is genuinely spare room may you add without removing. Three questions settle most cases:
+
+1. **Does it have a detectable trigger?** ("when changing the rules engine", "when touching the online backend", "when verifying in a browser") Then it belongs in a skill, which loads exactly when needed and costs nothing otherwise. This is the default answer; prefer it.
+2. **Is it broad and unconditional,** something every change in this repository must respect regardless of what it touches? Then it belongs here.
+3. **Otherwise** it is bloat. Delete it, or leave it as a comment beside the code it describes, which is where a narrow fact stays honest longest.
 
 ## What this is
 
-A faithful, 1:1 web replica of **"5D Chess With Multiverse Time Travel"** (Thunkspace, 2020), written in TypeScript. Goals, in priority order:
+A faithful 1:1 web replica of the game **"5D Chess With Multiverse Time Travel"** (Thunkspace, 2020), in TypeScript. Open source (MIT), public at `github.com/Adbotdoescode/5dchess`, live at https://5dimensionalchess.vercel.app. Priorities, in order:
 
-1. **Exact rules** of the original game: time travel, branching timelines, active/inactive timelines, the Present, multi-board checks, checkmate/stalemate across the multiverse, and all of the original's variants.
-2. **The original's look and feel**: flat 2D top-down multiverse on a large grey checkerboard background, small boards with cream/tan squares, purple timeline arrows with dark drop shadows, the vertical "The Present" bar, Crimson Text serif typography (the font of the official site; EB Garamond is only a CSS fallback), pill buttons at the top ("Undo Move", "Submit Moves", "Deselect"), right-side vertical tabs ("History View", "Parallel View", "Flip Persp."), status text bottom-left ("Your turn - White pieces"). Reference screenshots: Steam guide https://steamcommunity.com/sharedfiles/filedetails/?id=2176513845
-3. **Two play modes only**:
-   - **Online multiplayer (primary)**, no accounts: one player creates a game and shares a 6-character code (or `/?join=CODE` link), the other joins with it. Built on Supabase (RPC functions + Realtime broadcast).
-   - **Local**: one person plays both sides in the same browser.
+1. **Exact rules** of the original: time travel, branching timelines, active/inactive timelines, the Present, checks across the multiverse (including against kings on past boards), checkmate/stalemate, and all of the original's variants.
+2. **The original's look and feel**, down to the pixel: layout, colours, typography, animations, camera behaviour, sounds.
+3. **Two play modes only:** online (the primary mode; no accounts, join by a 6-character code or `/?join=CODE` link) and local (one person plays both sides in one browser).
 
-   The app is **only for playing the game**: menu = Online (create/join/rejoin), Local Match, Guide, Settings. The Guide is a plain-text rules page only (no interactive tutorial, mock gameplay or diagrams). The project owner explicitly does NOT want a computer opponent/AI, puzzles, an interactive tutorial or a credits screen, so don't add them. Piece-art attribution lives as one line in Settings.
+## Scope (owner decisions; don't override them)
+
+- **The menu is exactly:** Online (create / join / rejoin), Local Match, Guide, Settings.
+- **The Guide** (`src/ui/components/Guide.tsx`) is a plain-text rules page: headings and paragraphs only.
+- **Never add:** a computer opponent/AI, puzzles, an interactive tutorial or mock gameplay, a credits screen, public matchmaking, or accounts.
+
+## Rules every change must respect
+
+- **The original game is the only authority** on rules and behaviour. Not other implementations, not fan guides, not the test oracle. When they disagree, follow the original and leave a comment explaining the difference.
+- **No external links or source citations** in code, comments, docs or skills (no footage, posts, guides or other implementations). The repository is contributor-facing and must stand on its own. Record measured facts as plain facts.
+- **Licensing:**
+  - The project is MIT (`LICENSE`).
+  - Other implementations of this game exist under the AGPL. Never copy their code or assets.
+  - The AGPL npm package `5d-chess-js` is a devDependency used **only inside tests** as an oracle. Never import it from app or server code.
+  - Piece art is the cburnett set under its BSD option. Its notice lives in the header of `src/render/pieces/cburnett.ts` and must stay there. Don't add attribution to README files; the owner places the visible credit.
+- **Module boundaries:**
+  - `src/engine` imports nothing from other modules.
+  - `src/render` and `src/net` import only engine **types**.
+  - `src/ui` wires everything together.
+  - The `types.ts` in engine, render and net are the contracts. Extend them backwards-compatibly; never reach into another module's internals.
+- **Pushing to `main` deploys to production immediately** (there is no staging). Before pushing, `npm run build`, `npm run lint` and `npx vitest run` must pass, unless the owner explicitly says to skip them.
+- **Commit only source.** Scripts, screenshots, footage and test output from your own verification stay outside the repo.
+- **Keep the human docs in sync.** When rules, controls or modes change, update the in-game Guide and `docs/` in the same change. `docs/` is written for humans: short, plain and minimal.
+- **Writing style:** match the surrounding code's naming, idioms and comment density. Don't add emojis.
 
 ## Stack and commands
 
-- Vite + React + TypeScript single-page app, deployed to Vercel as static files (project `adbotdoescodes-projects/5dchess`, production: https://5dimensionalchess.vercel.app). Pushing to `main` on GitHub (`Adbotdoescode/5dchess`) auto-deploys.
-- Three.js for the multiverse view: the flat top-down view plus the original's animated History View and Parallel View (orthographic 3D, boards standing like cards).
-- Supabase project `5dchess` (ref `xniodzbzxmcxnbrwhrph`). Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (in `.env.local` locally and in Vercel). The Supabase MCP server is configured in `.mcp.json`.
-- `npm run dev` · `npm run build` (type-checks) · `npx vitest run` (tests) · `npm run lint`.
+- **Build:** Vite + React 19 + TypeScript (strict, `erasableSyntaxOnly`, `verbatimModuleSyntax`: no enums or parameter properties; use `import type`).
+- **Rendering:** Three.js, with one orthographic camera that tilts between the flat view and History/Parallel View.
+- **Hosting:** a static SPA on Vercel. Online play runs on Supabase (Postgres + Realtime + one Edge Function), project `5dchess`; the Supabase MCP server is configured in `.mcp.json`.
+- **Env:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` live in `.env.local` (gitignored; see `.env.example`) and in Vercel.
+- **Commands:**
+  - `npm run dev` · `npm run build` (type-checks) · `npm run lint` (oxlint) · `npx vitest run`
+  - `npm run build:edge` bundles the engine for the server.
 
-## Architecture
+## Layout
 
 ```
-src/engine/   Pure TypeScript rules engine. No DOM, no React. types.ts is the public contract.
-src/render/   Three.js multiverse renderer. Dumb view: takes a RenderModel, emits square clicks. types.ts is the contract.
-              render/cinematic/ is the original's time-travel cinematic (self-contained overlay; dev harness cinematic-demo.html).
-src/net/      Supabase client, online sessions (join codes, realtime sync). types.ts is the contract.
-src/ui/       React app shell: menus, HUD, game controller wiring engine + renderer + net, sounds.
-supabase/     SQL migrations for the `games` table and RPCs.
-docs/         Rules/UI research notes (ui-spec.md = the original's UI; parts about puzzles/guide/CPU are out of scope).
+src/engine/      Rules engine: pure TypeScript, no DOM; also runs on the server.
+src/render/      Three.js multiverse renderer (a dumb view: RenderModel in, square clicks out).
+  cinematic/     The original's full-screen time-travel cinematic (self-contained overlay).
+src/net/         Online sessions: Supabase client, join codes, realtime sync, clocks.
+src/ui/          React app: menus, HUD, game controller wiring engine + renderer + net, sounds.
+supabase/        SQL migrations and the `game-action` Edge Function (server-authoritative play).
+scripts/         build-edge.mjs (engine bundle for the Edge Function).
+docs/            Human documentation (rules, playing, development).
+.agents/skills/  Task-specific agent knowledge (loaded on demand).
+render-demo.html, cinematic-demo.html   Dev-only harness pages.
 ```
-
-Rules for module boundaries:
-- `engine` imports nothing from other modules. `render` imports only engine **types**. `net` imports only engine types. `ui` wires everything.
-- The three `types.ts` files are the contracts between modules. Extend them rather than reaching into another module's internals; keep changes backwards-compatible.
-
-## Rules engine conventions (see src/engine/types.ts)
-
-- Time is in half-turns: `t = 2*T + (black ? 1 : 0)`. A board at `t` is the position where `colorAt(t)` is to move.
-- Timeline `l`: main line 0; timelines created by white are positive, black negative (5D PGN). Even-timeline variants use half-integers (±0.5, ±1.5, ...). `Timeline.label` holds the notation name.
-- Squares: `x` file (0 = a), `y` rank (0 = rank 1).
-- Notation: 5D PGN as used by the open-source community (e.g. `(0T1)Nb1c3`, `(0T7)Qd1>>(0T5)d3`).
-- Tests are differential-checked against the AGPL `5d-chess-js` package (devDependency only; never imported from `src/` app code).
-
-## Online play (Supabase): server-authoritative
-
-- **Data access:** table `public.games` has RLS enabled and **no policies**, so clients never touch it directly. A seat belongs to whoever holds its random token; the server stores only a hash, and the client keeps the token in localStorage.
-- **Edge Function `game-action`** (`supabase/functions/game-action`, `verify_jwt=false`) is the ONLY way to create games, submit actions and claim results.
-  - It authenticates the seat token, replays the stored actions with a bundled copy of our engine, and rejects illegal actions with HTTP 422.
-  - It stores the engine's normalized copy of each action and computes `nextActiveTimelines` itself.
-  - It detects checkmate/stalemate in the background, with a CPU budget of about 1.6 s, and records the result.
-- **RPCs:** the raw `create_game`, `submit_action` and `set_result` are callable only by the service role. Public, token-checked RPCs: `join_game`, `get_game`, `offer_draw`, `answer_draw`, `cancel_game`, `offer_rematch`.
-- **Draws and rematches:** a draw needs a stored offer from the other seat. Draw offers, rematch offers and rematch codes are persisted, so they survive reloads.
-- **Engine changes require a redeploy:** run `npm run build:edge` (bundles the engine into `supabase/functions/_shared/engine.js`), then redeploy `game-action` with the Supabase MCP `deploy_edge_function`. The server must run the same engine as the client.
-- **Live updates** go over the Realtime broadcast channel `game:<CODE>` (with presence). Broadcasts only trigger a database re-read, so they're hints, never trusted.
-- **Clocks:** the original's main time plus "+N/L" delay (N seconds × active timelines at the start of each turn). This is computed identically in `src/net/clock.ts` (`computeClocks`) and SQL `_clock_remaining_ms`; change both together.
-- **Tests:** `NET_LIVE=1 npx vitest run src/net/live.test.ts` runs the live end-to-end test against the real project. It cleans up after itself.
-
-## Licensing — important
-
-The reference implementations (chess-in-5d, 5d-chess-js, 5d-chess-renderer: https://github.com/NKID00/chess-in-5d-stripped, https://github.com/NKID00/5d-chess-js, https://gitlab.com/5d-chess/5d-chess-renderer) are **AGPL-3.0**. Use them only to understand the rules and as a test oracle. **Do not copy their code or assets into `src/`.** Standard piece art comes from the cburnett set (Colin M.L. Burnett, multi-licensed on Wikimedia Commons), used under its BSD license option (the notice lives in the header of `src/render/pieces/cburnett.ts` and must stay there). The project itself is MIT-licensed (`LICENSE`). The owner will place the visible piece-art credit on the site themselves; don't add it to README files.
-
-## Original-game reference notes
-
-Owner-supplied rules background (movement in 4D, board layout, move order, checks against past kings): `docs/reference-blog.md`. It is a helpful fan guide, NOT a source of truth: verify its claims against the original game, which always wins.
-
-- Pieces: P N B R Q K plus U (unicorn: any distance along a triagonal, i.e. 3 axes), D (dragon: 4 axes), S (princess: rook + bishop), W (brawn: pawn variant), C (common king: non-royal king), Y (royal queen: royal piece moving as a queen). Movement axes are x, y, l (timeline) and T (full turns; moving "1 step in time" means 2 half-turns, landing on a board of the same color).
-- Moving to a past board (or any non-end board) creates a new timeline. Moving to another timeline's playable end board does not.
-- A player may create at most one more *active* timeline than the opponent; extra ones are inactive (drawn with a white/black arrow instead of purple) until the opponent catches up.
-- The Present is the earliest end-board time over active timelines; you must move on every active timeline whose end board is at the Present before you can submit.
-- You may make moves that leave your king in check; you just can't submit while in check (red arrows show the threats).
-- The full-screen time-travel cinematic is in scope. The round button on the right edge is the original's one-shot switch: with it on, the player's next own travel plays the cinematic, then the button turns itself off. The opponent's travel never plays it. See docs/original-recording-notes.md, "Time-travel cinematic", for the rule, the evidence and the measured beats.

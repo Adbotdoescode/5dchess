@@ -1,5 +1,5 @@
 // The blue checkered "time tunnel" behind the time-travel cinematic, as a screen-space
-// shader. Measured from the owner's 1080p recording (40.8 s, docs/original-recording-notes.md):
+// shader. Measured from the original at 1080p:
 //  - centred on the view; with ρ = distance from the centre / (base / 2) and u = 1 / ρ
 //    (u is proportional to depth along the tunnel), the wall is a checkerboard of
 //    8 angular sectors x rings 0.25 apart in u;
@@ -15,7 +15,7 @@ import * as THREE from 'three'
 export const VORTEX_SECTORS = 8
 export const VORTEX_RING = 0.25
 export const VORTEX_TWIST = 0.806
-/** Pattern phases at rest (fitted to the recording). */
+/** Pattern phases at rest (fitted to the original). */
 export const VORTEX_SECTOR_PHASE = 0.0
 export const VORTEX_RING_PHASE = 0.183
 

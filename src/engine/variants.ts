@@ -1,9 +1,7 @@
 // Variants of "5D Chess With Multiverse Time Travel" (all 45 of the current
 // game, excluding "Random" and the puzzles), as 5DFEN board strings.
 //
-// Sources: the 5D PGN reference table of built-in boards (adri326/5dchess-notation),
-// the 5D chess wiki's variant page, the Steam guide "All Variants Explained" (screenshots
-// checked square by square where available) and the reference engine's built-in boards.
+// Setups follow the original game's built-in boards.
 // Unmoved markers ('*') are put on every king, rook, pawn and brawn of the starting
 // position (pieces that have never moved), which is how the game tracks double steps
 // and castling rights.

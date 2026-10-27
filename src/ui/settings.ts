@@ -12,7 +12,7 @@ export interface Settings {
   /**
    * The original's round button (blue swirl = on, grey checker = off; hotkey I): the next
    * time travel you make plays the full-screen vortex cinematic, after which the button
-   * turns itself off (docs/original-recording-notes.md, "Time-travel cinematic").
+   * turns itself off.
    * Global and persisted, like the original's (not per game).
    */
   travelAnimation: boolean

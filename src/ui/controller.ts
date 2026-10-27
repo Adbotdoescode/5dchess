@@ -620,8 +620,7 @@ export class GameController {
   // ---------------------------------------------------------------- time-travel cinematic
 
   /**
-   * The original's rule (docs/original-recording-notes.md, "Time-travel cinematic"): with the
-   * round button on, the next time travel the player makes on this screen plays the vortex
+   * The original's rule: with the round button on, the next time travel the player makes on this screen plays the vortex
    * cinematic and the button turns itself off. The opponent's travel never plays it.
    */
   private cinematicWanted(): boolean {

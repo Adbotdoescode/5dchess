@@ -107,7 +107,7 @@ const SHADOW_3D = 1.0
 const SLAB_SHADOW_3D = 1.0
 /** Pulsing halo around boards that must still be moved on. */
 const GLOW_PAD = 0.026
-/** 3D hover: the whole board turns green (measured from the recording: #478448 at ~57%). */
+/** 3D hover: the whole board turns green (original: #478448 at ~57%). */
 const HOVER_TINT = '#478448'
 const HOVER_TINT_ALPHA = 0.57
 /** Hover over a piece: green square; over a legal destination: a ghost of the selected piece. */
@@ -118,7 +118,7 @@ const GHOST_ALPHA = 0.5
 const SLAB_SIDE = '#2e2e30'
 
 const TIERS = [64, 128, 256, 512, 1024, 2048]
-/** New board slide (recording: ~0.3-0.4 s, ease-out). */
+/** New board slide (original: ~0.3-0.4 s, ease-out). */
 const NEW_BOARD_MS = 340
 /** The present bar slides and cross-fades once the boards have landed. */
 const PRESENT_DELAY = 0.6
@@ -1636,7 +1636,7 @@ export class Renderer implements MultiverseRenderer {
   /**
    * Lays out complete "The Present" labels along the bar: never overlapping each
    * other, the present markers or boards in the present column. As in the game
-   * (01.png), the text sits just beyond the markers and repeats outwards.
+   * (as in the original), the text sits just beyond the markers and repeats outwards.
    */
   private placeLabels(lo: number, hi: number, z: number) {
     const L = this.layout!
@@ -1853,7 +1853,7 @@ export class Renderer implements MultiverseRenderer {
     const outline: number[] = []
     const cores: Record<string, number[]> = { 'last-move': [], pending: [], check: [] }
     const seen = new Set<string>()
-    // the original's 3D views show no history arrows (recording 65 / 72 s): only tentative and check arrows
+    // the original's 3D views show no history arrows : only tentative and check arrows
     const history = pose.s < 0.5
     const list = [...model.arrows.filter((a) => history || a.kind !== 'last-move'), ...model.checks.map((c) => ({ from: c.from, to: c.to, kind: 'check' as const }))]
     const flat = this.rig.flat

@@ -43,7 +43,7 @@ describe('computeLayout', () => {
     const M = computeLayout(byId('multi'))
     const white = M.markers.find((m) => m.color === 'white')!
     const black = M.markers.find((m) => m.color === 'black')!
-    expect(white.y).toBe(-2) // +2 is inactive, so the marker shares its row (06.png)
+    expect(white.y).toBe(-2) // +2 is inactive, so the marker shares its row
     expect(white.arrow).toBe(false)
     expect(black.y).toBe(1)
     expect(black.arrow).toBe(true)
