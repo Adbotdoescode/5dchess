@@ -18,6 +18,7 @@ scope.onmessage = (e) => {
     const hasLegal = g.hasLegalAction(budgetMs)
     scope.postMessage({ id, inCheck, hasLegal })
   } catch (err) {
+    console.error('[mate worker] search failed', err)
     scope.postMessage({ id, inCheck: false, hasLegal: null, error: String(err) })
   }
 }

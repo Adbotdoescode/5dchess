@@ -85,6 +85,30 @@ export interface RendererEvents {
   onBackgroundClick?(): void
 }
 
+/** Screen-space margins (CSS px) covered by HUD elements along each edge of the view. */
+export interface ViewInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/** A screen rectangle in CSS px, relative to the container's top-left. */
+export interface ScreenRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Where the app's HUD sits on top of the view. */
+export interface HudLayout {
+  /** Framing (focusPresent / focusBoard) keeps boards out of these margins. */
+  insets: ViewInsets
+  /** Background labels (T1, T2, ...) are not drawn where they would collide with these (e.g. the status text). */
+  avoid?: ScreenRect[]
+}
+
 export interface MultiverseRenderer {
   /** Replace the displayed model; renderer diffs and animates as needed. */
   setModel(model: RenderModel): void
@@ -103,6 +127,8 @@ export interface MultiverseRenderer {
   panBy?(dxPx: number, dyPx: number): void
   /** Optional: zoom by `factor` (>1 zooms in) around the viewport centre (keyboard zoom). */
   zoomBy?(factor: number): void
+  /** Optional: tell the renderer which screen areas the HUD covers (see HudLayout). */
+  setHud?(hud: HudLayout): void
   /** Must be called when the container resizes (renderer may also observe itself). */
   resize(): void
   dispose(): void

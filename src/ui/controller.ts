@@ -9,6 +9,7 @@ import type { ClockSettings, OnlineEvent, OnlineSession } from '../net'
 import { LocalClock, toClockView } from './clock'
 import type { ClockView, LocalClockSave } from './clock'
 import { detectEnd } from './mate'
+import { friendlyError } from './format'
 import { getSettings } from './settings'
 import type { Settings } from './settings'
 import { sound } from './sound'
@@ -40,6 +41,32 @@ export function capitalize(c: Color): string {
   return c === 'white' ? 'White' : 'Black'
 }
 
+/** Where a stored action history stopped replaying. */
+export interface HistoryError {
+  /** Index of the first action that could not be applied. */
+  index: number
+  player: Color
+}
+
+/**
+ * Replay `actions` from the variant's start, stopping at the first one the engine
+ * rejects (the game then shows the position before it).
+ */
+export function replayActions(variantId: string, actions: readonly Action[]): { game: Game; error: HistoryError | null } {
+  const game = Game.create(variantId, GAME_OPTS)
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i]
+    try {
+      game.applyAction(a)
+    } catch (err) {
+      console.error(`[history] action ${i} (${a?.player}) does not replay:`, err, a)
+      const player: Color = a?.player === 'black' || a?.player === 'white' ? a.player : game.player
+      return { game, error: { index: i, player } }
+    }
+  }
+  return { game, error: null }
+}
+
 export class GameController {
   game: Game
   readonly mode: Mode
@@ -54,13 +81,17 @@ export class GameController {
   submitting = false
   checkingEnd = false
   opponentOnline: boolean | null = null
-  drawOfferIncoming = false
-  drawOfferSent = false
-  rematchIncoming = false
-  rematchSent = false
+  private drawIncomingLocal = false
+  private drawSentLocal = false
+  /** An info.drawOffer value we know is out of date (declined / overtaken by a move). */
+  private staleDrawOffer: Color | null = null
+  private rematchIncomingLocal = false
+  private rematchSentLocal = false
   overlayDismissed = false
   /** Opponent sent something we could not apply; we are waiting for a resync. */
   desynced = false
+  /** The server's action history does not replay: the game is frozen before the bad action. */
+  historyError: HistoryError | null = null
 
   /** Revision for React (bumped on every UI-visible change). */
   rev = 0
@@ -80,6 +111,11 @@ export class GameController {
   private flagClaimed = false
   private localClock: LocalClock | null = null
   private offSession: (() => void) | null = null
+  /** The last end-of-game check failed (worker crashed / couldn't load): retry later. */
+  private endCheckFailed = false
+  private endCheckRetry: ReturnType<typeof setTimeout> | null = null
+  private endCheckAttempts = 0
+  private readonly onBrowserOnline = () => this.retryEndCheck()
 
   private onNotice: ((text: string, tone: NoticeTone) => void) | null = null
   private onRematch: ((code: string) => void) | null = null
@@ -97,9 +133,11 @@ export class GameController {
     this.variantId = variantId
     if (mode.kind === 'online') {
       const info = mode.session.info
-      this.game = Game.fromActions(info.variantId, info.actions, GAME_OPTS)
+      const { game, error } = replayActions(info.variantId, info.actions)
+      this.game = game
+      this.historyError = error
       if (info.result.kind !== 'ongoing') this.game.setResult(info.result)
-      else this.restorePending(this.game)
+      else if (!error) this.restorePending(this.game)
     } else if (resume) {
       this.game = Game.fromActions(variantId, resume.actions, GAME_OPTS)
       for (const m of resume.pending) {
@@ -167,6 +205,7 @@ export class GameController {
       this.offSession = session.on((e) => this.onOnlineEvent(e))
       this.catchUp()
     }
+    window.addEventListener('online', this.onBrowserOnline)
     this.lastPerspective = this.perspective
     this.render()
     renderer.focusPresent()
@@ -178,6 +217,9 @@ export class GameController {
     this.offSession = null
     this.renderer = null
     this.mateReq++
+    window.removeEventListener('online', this.onBrowserOnline)
+    if (this.endCheckRetry) clearTimeout(this.endCheckRetry)
+    this.endCheckRetry = null
     this.saveNow()
   }
 
@@ -219,7 +261,7 @@ export class GameController {
   }
 
   get canInteract(): boolean {
-    if (!this.myTurn || this.submitting || this.desynced) return false
+    if (!this.myTurn || this.submitting || this.desynced || this.historyError) return false
     const s = this.online
     if (s && !s.info.opponentJoined) return false
     return true
@@ -231,6 +273,67 @@ export class GameController {
     if (s) base = s.role === 'spectator' ? 'white' : s.role
     else base = getSettings().autoFlip ? this.game.player : 'white'
     return this.flipped ? other(base) : base
+  }
+
+  /** Our seat's opponent (null locally / spectating). */
+  private get opponentColor(): Color | null {
+    const me = this.myColor
+    return me ? other(me) : null
+  }
+
+  /** The server's record of an open draw offer (persisted: survives reloads). */
+  private get infoDrawOffer(): Color | null {
+    return this.online?.info.drawOffer ?? null
+  }
+
+  /** The opponent offers a draw (from the live event or, after a reload, the server's state). */
+  get drawOfferIncoming(): boolean {
+    if (this.isOver || this.historyError) return false
+    if (this.drawIncomingLocal) return true
+    const d = this.infoDrawOffer
+    return !!d && d === this.opponentColor && this.staleDrawOffer !== d
+  }
+
+  /** We offered a draw that is still open. */
+  get drawOfferSent(): boolean {
+    if (this.isOver) return false
+    if (this.drawSentLocal) return true
+    const d = this.infoDrawOffer
+    return !!d && d === this.myColor && this.staleDrawOffer !== d
+  }
+
+  /** Any action ends an open draw offer: "Offer draw" is available again. */
+  private clearDrawOffers(): void {
+    this.drawIncomingLocal = false
+    this.drawSentLocal = false
+    this.staleDrawOffer = this.infoDrawOffer
+  }
+
+  /** The opponent asked for a rematch (live event, or the server's record after a reload). */
+  get rematchIncoming(): boolean {
+    if (this.rematchIncomingLocal) return true
+    const r = this.online?.info.rematchOffer ?? null
+    return !!r && r === this.opponentColor
+  }
+
+  /** We asked for (or accepted) a rematch. */
+  get rematchSent(): boolean {
+    if (this.rematchSentLocal) return true
+    const r = this.online?.info.rematchOffer ?? null
+    return !!r && r === this.myColor
+  }
+
+  /** Code of the rematch game once it exists (server state; survives reloads). */
+  get rematchCode(): string | null {
+    const info = this.online?.info
+    const c = info?.rematchCode
+    return typeof c === 'string' && c && c !== info?.code ? c : null
+  }
+
+  /** Follow the rematch recorded on the server (e.g. after a reload missed the live event). */
+  joinRematch(): void {
+    const c = this.rematchCode
+    if (c) this.onRematch?.(c)
   }
 
   get selectedPiece(): Piece | null {
@@ -494,6 +597,7 @@ export class GameController {
     this.selected = null
     this.dests = []
     this.cycleIndex = -1
+    this.clearDrawOffers()
     const nextActive = this.activeTimelineCount()
     this.localClock?.submitted(action.player, nextActive)
     sound.play('submit')
@@ -554,7 +658,10 @@ export class GameController {
 
   private runEndCheck(): void {
     const g = this.game
-    if (g.result().kind !== 'ongoing') return
+    if (g.result().kind !== 'ongoing' || this.historyError) return
+    if (this.endCheckRetry) clearTimeout(this.endCheckRetry)
+    this.endCheckRetry = null
+    this.endCheckFailed = false
     const len = g.history.length
     const req = ++this.mateReq
     this.checkingEnd = true
@@ -562,6 +669,20 @@ export class GameController {
     detectEnd(this.variantId, actions).then((r) => {
       if (req !== this.mateReq || this.game !== g || g.history.length !== len) return
       this.checkingEnd = false
+      if (r.hasLegal === null && r.error && r.error !== 'cancelled') {
+        // The worker failed (e.g. offline and its script could not load): try again on
+        // reconnect, on the next sync, or after a pause.
+        console.warn('[mate] end-of-game check failed, will retry:', r.error)
+        this.endCheckFailed = true
+        if (this.endCheckAttempts < 30) {
+          const delay = Math.min(30000, 2000 * 2 ** Math.min(this.endCheckAttempts, 4))
+          this.endCheckRetry = setTimeout(() => this.retryEndCheck(), delay)
+        }
+        this.endCheckAttempts++
+        this.emit()
+        return
+      }
+      this.endCheckAttempts = 0
       if (r.hasLegal === false && g.result().kind === 'ongoing') {
         const result: GameResult = r.inCheck ? { kind: 'checkmate', winner: other(g.player) } : { kind: 'stalemate' }
         this.finish(result)
@@ -569,6 +690,12 @@ export class GameController {
         this.emit()
       }
     })
+  }
+
+  /** Re-run a failed end-of-game check (no-op if the last one succeeded). */
+  private retryEndCheck(): void {
+    if (!this.endCheckFailed || !this.renderer) return
+    this.runEndCheck()
   }
 
   /** Apply a final result locally (and report it to the server online). */
@@ -581,7 +708,7 @@ export class GameController {
     this.selected = null
     this.dests = []
     this.overlayDismissed = false
-    this.drawOfferIncoming = false
+    this.clearDrawOffers()
     sound.play('end')
     this.changed()
     const s = this.online
@@ -625,7 +752,8 @@ export class GameController {
       return
     }
     s.offerDraw()
-    this.drawOfferSent = true
+    this.drawSentLocal = true
+    this.staleDrawOffer = null
     this.notice('Draw offered')
     this.emit()
   }
@@ -633,7 +761,9 @@ export class GameController {
   answerDraw(accept: boolean): void {
     const s = this.online
     if (!s) return
-    this.drawOfferIncoming = false
+    this.drawIncomingLocal = false
+    const d = this.infoDrawOffer
+    if (d && d !== this.myColor) this.staleDrawOffer = d
     if (accept) this.finish({ kind: 'draw-agreed' })
     else s.answerDraw(false)
     this.emit()
@@ -644,7 +774,7 @@ export class GameController {
     if (!s || s.role === 'spectator') return
     if (this.rematchIncoming) s.acceptRematch()
     else s.offerRematch()
-    this.rematchSent = true
+    this.rematchSentLocal = true
     this.emit()
   }
 
@@ -655,7 +785,7 @@ export class GameController {
     const s = this.online
     if (!s) return
     const info = s.info
-    if (info.actions.length > this.game.history.length) {
+    if (info.actions.length > this.game.history.length && !this.historyError) {
       this.rebuild(info.actions, info.result, [])
     } else if (info.result.kind !== 'ongoing' && this.game.result().kind === 'ongoing') {
       this.game.setResult(info.result)
@@ -665,6 +795,8 @@ export class GameController {
 
   private onOnlineEvent(e: OnlineEvent): void {
     const s = this.online!
+    // the session just heard from the server: a good moment to retry a failed end check
+    if (e.type !== 'error') queueMicrotask(() => this.retryEndCheck())
     switch (e.type) {
       case 'action': {
         const g = this.game
@@ -696,6 +828,7 @@ export class GameController {
         this.selected = null
         this.dests = []
         this.cycleIndex = -1
+        this.clearDrawOffers()
         if (e.nextActiveTimelines !== undefined && e.nextActiveTimelines !== this.activeTimelineCount()) {
           console.warn('active timeline count mismatch', e.nextActiveTimelines, this.activeTimelineCount())
           this.notice('Clock note: your opponent counted a different number of active timelines this turn')
@@ -719,8 +852,7 @@ export class GameController {
         this.selected = null
         this.dests = []
         this.overlayDismissed = false
-        this.drawOfferIncoming = false
-        this.drawOfferSent = false
+        this.clearDrawOffers()
         sound.play('end')
         this.changed()
         return
@@ -737,17 +869,29 @@ export class GameController {
         this.emit()
         return
       case 'draw-offer':
-        this.drawOfferIncoming = true
+        if (this.isOver) return
+        this.drawIncomingLocal = true
+        this.staleDrawOffer = null
         sound.play('notify')
         this.emit()
         return
-      case 'draw-declined':
-        this.drawOfferSent = false
-        this.notice('Draw offer declined')
+      case 'draw-declined': {
+        this.drawSentLocal = false
+        const d = this.infoDrawOffer
+        if (d && d === this.myColor) this.staleDrawOffer = d
+        if (e.reason !== 'expired') this.notice('Draw offer declined')
         this.emit()
         return
+      }
+      case 'draw-offer-withdrawn': {
+        this.drawIncomingLocal = false
+        const d = this.infoDrawOffer
+        if (d && d !== this.myColor) this.staleDrawOffer = d
+        this.emit()
+        return
+      }
       case 'rematch-offer':
-        this.rematchIncoming = true
+        this.rematchIncomingLocal = true
         sound.play('notify')
         this.emit()
         return
@@ -755,25 +899,18 @@ export class GameController {
         this.onRematch?.(e.code)
         return
       case 'error':
-        this.notice(e.message, 'error')
+        console.warn('[online]', e.message)
+        this.notice(friendlyError(e.message), 'error')
         return
     }
   }
 
   /** Rebuild the Game from an authoritative action list (keeps the view). */
   private rebuild(actions: readonly Action[], result: GameResult, pending: readonly Move[]): void {
-    let g: Game
-    try {
-      g = Game.fromActions(this.variantId, actions, GAME_OPTS)
-    } catch (err) {
-      console.error('rebuild failed', err)
-      this.desynced = true
-      this.notice('This game could not be loaded: its history is invalid.', 'error')
-      this.emit()
-      return
-    }
+    const { game: g, error } = replayActions(this.variantId, actions)
+    this.historyError = error
     if (result.kind !== 'ongoing') g.setResult(result)
-    else {
+    else if (!error) {
       for (const m of pending) {
         try {
           g.makeMove(m)
@@ -789,6 +926,7 @@ export class GameController {
     this.dests = []
     this.mateReq++
     this.checkingEnd = false
+    if (error) this.cycleIndex = -1
     this.changed()
     this.renderer?.focusPresent()
     this.runEndCheck()
@@ -849,7 +987,9 @@ export class GameController {
   /** 5D PGN export with a few headers. */
   pgn(): string {
     const s = this.online
-    const headers: Record<string, string> = { Date: new Date().toISOString().slice(0, 10).replace(/-/g, '.') }
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const headers: Record<string, string> = { Date: `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}` }
     if (s) {
       headers.Site = s.info.code
       const me = s.role

@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import '@fontsource/crimson-text/400-italic.css'
 import type { Board, Pos } from '../engine/types'
-import type { MultiverseRenderer, RenderModel, RendererEvents } from './types'
+import type { HudLayout, MultiverseRenderer, RenderModel, RendererEvents, ScreenRect, ViewInsets } from './types'
 import {
   ARROW_HALF,
   ARROW_HEAD_HALF,
@@ -89,6 +89,18 @@ const TIERS = [64, 128, 256, 512, 1024, 2048]
 const NEW_BOARD_MS = 380
 const BAND_MS = 380
 const PRESENT_MS = 480
+
+/** Screens whose short side is below this get the touch-friendly framing (big present boards). */
+const COMPACT_PX = 560
+/** Camera limits: the target may rest this far (world units, ~1.5 boards) outside the multiverse. */
+const PAN_MARGIN = 1.5
+/** Zoomed fully out you see at least this many rows and columns (even for a tiny multiverse)... */
+const MIN_VIEW_ROWS = 6
+const MIN_VIEW_COLS = 8
+/** ...or the whole multiverse plus this margin (world units) around it, whichever is more. */
+const FIT_MARGIN = 1.5
+/** Zoomed fully in, one board slot spans this multiple of the view's short side. */
+const MAX_SLOT_VIEW = 1.6
 
 const BAND_COLORS: Record<BandStyle, { body: string; rim: string }> = {
   active: { body: COLORS.bandActive, rim: COLORS.bandActiveRim },
@@ -179,6 +191,8 @@ export class Renderer implements MultiverseRenderer {
   private hoverKey = ''
   private lastCamKey = ''
   private texturesPending = false
+  private insets: ViewInsets = { top: 0, right: 0, bottom: 0, left: 0 }
+  private avoid: ScreenRect[] = []
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -393,6 +407,7 @@ export class Renderer implements MultiverseRenderer {
 
     this.updateHoverOverlays()
     this.buildArrows()
+    this.updateZoomLimits()
 
     if (this.firstModel) {
       this.firstModel = false
@@ -414,8 +429,18 @@ export class Renderer implements MultiverseRenderer {
       x = this.model.viewFilter === 'parallel' ? Math.floor(t / 2) : t
       y = this.model.perspective === 'white' ? -l : l
     } else return
-    const minZoom = Math.min(this.rig.width, this.rig.height) / 5
-    this.rig.animateTo({ cx: x, cy: y, zoom: Math.max(this.rig.state.zoom, minZoom) })
+    const minZoom = this.compact() ? this.tapZoom() : Math.min(this.rig.width, this.rig.height) / 5
+    const zoom = Math.max(this.rig.state.zoom, minZoom)
+    const c = this.cameraCentreFor(x, y, zoom)
+    this.rig.animateTo({ cx: c.x, cy: c.y, zoom })
+    this.requestRender()
+  }
+
+  setHud(hud: HudLayout): void {
+    const i = hud.insets
+    const r = (v: number) => Math.max(0, Math.round(v))
+    this.insets = { top: r(i.top), right: r(i.right), bottom: r(i.bottom), left: r(i.left) }
+    this.avoid = (hud.avoid ?? []).map((a) => ({ ...a }))
     this.requestRender()
   }
 
@@ -449,6 +474,7 @@ export class Renderer implements MultiverseRenderer {
     this.overlay.width = Math.round(w * dpr)
     this.overlay.height = Math.round(h * dpr)
     this.rig.setSize(w, h)
+    this.updateZoomLimits()
     this.requestRender()
   }
 
@@ -496,29 +522,133 @@ export class Renderer implements MultiverseRenderer {
     return this.model?.background === 'ended' ? [COLORS.bgEndedLight, COLORS.bgEndedDark] : [COLORS.bgLight, COLORS.bgDark]
   }
 
+  /** HUD insets, limited so at least half of each screen dimension stays usable. */
+  private viewInsets(): ViewInsets {
+    const w = this.rig.width
+    const h = this.rig.height
+    const i = this.insets
+    const kx = Math.min(1, (w * 0.5) / Math.max(1, i.left + i.right))
+    const ky = Math.min(1, (h * 0.5) / Math.max(1, i.top + i.bottom))
+    return { top: i.top * ky, bottom: i.bottom * ky, left: i.left * kx, right: i.right * kx }
+  }
+
+  /** Phones and other small views: frame the present boards large enough to tap. */
+  private compact(): boolean {
+    return Math.min(this.rig.width, this.rig.height) < COMPACT_PX
+  }
+
+  /** Size (world units) of an end board, for the tap-friendly zoom. */
+  private endBoardSize(): { w: number; h: number } {
+    for (const p of this.layout?.boards ?? []) if (p.thick) return { w: p.w, h: p.h }
+    return { w: 0.88, h: 0.88 }
+  }
+
+  /**
+   * Zoom at which one board fills ~80% of the screen width (squares of ~32+ px on a
+   * phone), as long as it still fits the space between the HUD elements.
+   */
+  private tapZoom(): number {
+    const ins = this.viewInsets()
+    const aw = this.rig.width - ins.left - ins.right
+    const ah = this.rig.height - ins.top - ins.bottom
+    const b = this.endBoardSize()
+    return Math.min((0.8 * this.rig.width) / b.w, (0.94 * aw) / b.w, (0.9 * ah) / b.h)
+  }
+
+  /** Camera target that puts world point (x, y) in the middle of the area the HUD leaves free. */
+  private cameraCentreFor(x: number, y: number, zoom: number): { x: number; y: number } {
+    const ins = this.viewInsets()
+    return { x: x + (ins.right - ins.left) / 2 / zoom, y: y + (ins.top - ins.bottom) / 2 / zoom }
+  }
+
+  /**
+   * Camera limits from the multiverse's extent: zoom out to the whole multiverse plus a
+   * margin (or a few rows, for a small one), zoom in to about one board per screen, and
+   * keep the target near the content (soft bounds, see CameraRig).
+   */
+  private updateZoomLimits() {
+    const L = this.layout
+    if (!L) return
+    const b = L.bounds
+    let minY = b.minY
+    let maxY = b.maxY
+    for (const mk of L.markers) {
+      minY = Math.min(minY, mk.y - 0.5)
+      maxY = Math.max(maxY, mk.y + 0.5)
+    }
+    const box = { minX: Math.min(b.minX, L.presentX - 0.5), maxX: Math.max(b.maxX, L.presentX + 0.5), minY, maxY }
+    const w = this.rig.width
+    const h = this.rig.height
+    const fitAll = Math.min(w / (box.maxX - box.minX + 2 * FIT_MARGIN), h / (box.maxY - box.minY + 2 * FIT_MARGIN))
+    const minZoom = Math.min(fitAll, h / MIN_VIEW_ROWS, w / MIN_VIEW_COLS)
+    const maxZoom = Math.max(Math.min(w, h) * MAX_SLOT_VIEW, minZoom * 2)
+    this.rig.setLimits({ box, margin: PAN_MARGIN, minZoom, maxZoom })
+  }
+
   private focusPresentNow(dur: number) {
     const L = this.layout
     if (!L) return
     const b = L.presentBounds
-    // include the end boards of active timelines and the markers' rows
-    const minX = b.minX - 0.3
-    const maxX = b.maxX + 0.3
-    const minY = b.minY - 0.15
-    const maxY = b.maxY + 0.15
+    // the end boards of active timelines plus the present markers just beyond them
+    let minX = b.minX - 0.3
+    let maxX = b.maxX + 0.3
+    let minY = b.minY - 0.15
+    let maxY = b.maxY + 0.15
+    const mr = MARKER_RADIUS + MARKER_RIM + 0.08
+    for (const mk of L.markers) {
+      minY = Math.min(minY, mk.y - mr)
+      maxY = Math.max(maxY, mk.y + mr)
+    }
     const w = this.rig.width
     const h = this.rig.height
-    const zoomFit = Math.min(w / (maxX - minX), h / (maxY - minY))
-    // never closer than the game's default framing (~5.3 rows on screen); on narrow
-    // portrait screens (phones) allow ~3.4 boards across instead of 7 columns
-    let zoom = Math.min(zoomFit, h / 5.3, Math.max(w / 7, Math.min(w, h) / 3.4))
+    const ins = this.viewInsets()
+    const aw = w - ins.left - ins.right
+    const ah = h - ins.top - ins.bottom
+    // never closer than the game's default framing (~5.3 rows on screen)
+    let zoom = Math.min(aw / (maxX - minX), ah / (maxY - minY), h / 5.3)
+    let cx = (minX + maxX) / 2
     let cy = (minY + maxY) / 2
+    if (this.compact()) {
+      // phones: one board ~80% of the screen width, centred on the boards to move on
+      zoom = Math.max(zoom, this.tapZoom())
+      const t = this.focusTargets()
+      if (t.length) {
+        const tMinX = Math.min(...t.map((p) => p.x - p.w / 2))
+        const tMaxX = Math.max(...t.map((p) => p.x + p.w / 2))
+        const tMinY = Math.min(...t.map((p) => p.y - p.h / 2))
+        const tMaxY = Math.max(...t.map((p) => p.y + p.h / 2))
+        cx = (tMinX + tMaxX) / 2
+        cy = (tMinY + tMaxY) / 2
+        if ((tMaxX - tMinX) * zoom > aw * 0.96 || (tMaxY - tMinY) * zoom > ah * 0.96) {
+          // they don't all fit: centre the one nearest the middle of the group (Tab cycles the rest)
+          let best = t[0]
+          for (const p of t) if (Math.hypot(p.x - cx, p.y - cy) < Math.hypot(best.x - cx, best.y - cy)) best = p
+          cx = best.x
+          cy = best.y
+        }
+      }
+    }
     if (this.rig.mode === '3d') {
       // boards stand up from their row: aim a little higher and back off a bit
       cy += 0.3
       zoom *= 0.85
     }
-    this.rig.animateTo({ cx: (minX + maxX) / 2, cy, zoom }, dur)
+    zoom = Math.max(zoom, this.rig.minZoom)
+    const c = this.cameraCentreFor(cx, cy, zoom)
+    this.rig.animateTo({ cx: c.x, cy: c.y, zoom }, dur)
     this.requestRender()
+  }
+
+  /** Boards the player must move on, else the present end boards of active timelines. */
+  private focusTargets(): BoardPlacement[] {
+    const L = this.layout
+    const model = this.model
+    if (!L || !model) return []
+    const req = model.requiredBoards.map((k) => L.boardsByKey.get(k)).filter((p): p is BoardPlacement => !!p)
+    if (req.length) return req
+    const present = L.boards.filter((p) => p.thick && Math.abs(p.x - L.presentX) < 1e-6)
+    if (present.length) return present
+    return L.boards.filter((p) => p.thick)
   }
 
   // -------------------------------------------------------------------------
@@ -1146,7 +1276,10 @@ export class Renderer implements MultiverseRenderer {
     }
   }
 
-  /** Turn labels ("T1", "T2", ...) along the bottom of the screen. */
+  /**
+   * Turn labels ("T1", "T2", ...) along the bottom of the screen (2D). Labels that
+   * would run into HUD text (the status line) are left out, as in the original.
+   */
   private drawOverlay() {
     const L = this.layout
     const ctx = this.overlay.getContext('2d')!
@@ -1171,10 +1304,19 @@ export class Renderer implements MultiverseRenderer {
     ctx.font = `700 ${fontPx}px "Helvetica Neue", Helvetica, Arial, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+    // zoomed far out the labels would run together: label every n-th turn only
+    const spacing = Math.abs(this.rig.project(new THREE.Vector3(L.cellOrigin + cw, ground.y, 0)).x - this.rig.project(new THREE.Vector3(L.cellOrigin, ground.y, 0)).x)
+    const widest = ctx.measureText(`T${Math.max(0, t1)}`).width + fontPx * 0.6
+    const step = spacing > 0 ? Math.max(1, Math.ceil(widest / spacing)) : 1
     for (let T = Math.max(0, t0); T <= t1; T++) {
+      if (T % step !== 0) continue
       const wx = L.cellOrigin + (T + 0.5) * cw
       const p = this.rig.project(new THREE.Vector3(wx, ground.y, 0))
       if (p.x < -50 || p.x > W + 50) continue
+      const tw = ctx.measureText(`T${T}`).width
+      const pad = fontPx * 0.5
+      const box = { x: p.x - tw / 2 - pad, y: by - fontPx * 0.6, w: tw + 2 * pad, h: fontPx * 1.2 }
+      if (this.avoid.some((a) => box.x < a.x + a.w && box.x + box.w > a.x && box.y < a.y + a.h && box.y + box.h > a.y)) continue
       // label colour = the other checker colour of the cell it sits on
       const g = this.rig.screenToGround(p.x, by)
       const gy = g ? g.y : ground.y
@@ -1248,6 +1390,7 @@ export class Renderer implements MultiverseRenderer {
       if (ev.pointerType === 'mouse' && ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return
       canvas.setPointerCapture?.(ev.pointerId)
       const p = rel(ev)
+      if (!pointers.has(ev.pointerId)) this.rig.hold(true)
       pointers.set(ev.pointerId, p)
       this.rig.stopAnimation()
       if (pointers.size === 1) {
@@ -1294,6 +1437,8 @@ export class Renderer implements MultiverseRenderer {
       const p = rel(ev)
       const had = pointers.delete(ev.pointerId)
       if (!had) return
+      this.rig.hold(false)
+      this.requestRender() // let the camera spring back inside its bounds
       if (pointers.size < 2) pinch = null
       if (down && down.id === ev.pointerId && !dragging && (ev.pointerType !== 'mouse' || ev.button === 0)) {
         const hit = this.hitTest(p.x, p.y)
@@ -1311,7 +1456,8 @@ export class Renderer implements MultiverseRenderer {
       }
     }
     const onCancel = (ev: PointerEvent) => {
-      pointers.delete(ev.pointerId)
+      if (pointers.delete(ev.pointerId)) this.rig.hold(false)
+      this.requestRender()
       if (pointers.size < 2) pinch = null
       if (pointers.size === 0) {
         down = null

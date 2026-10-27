@@ -2,9 +2,9 @@
 // (docs/ui-spec.md §3): top-centre pills, right-edge tabs, bottom-left status,
 // clocks top-left, the "*" menu and the end-of-game card.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRenderer } from '../render'
-import type { MultiverseRenderer } from '../render'
+import type { HudLayout, MultiverseRenderer } from '../render'
 import type { Color } from '../engine'
 import type { GameController } from './controller'
 import { formatClock } from './clock'
@@ -26,20 +26,71 @@ interface Props {
 const PAN_SPEED = 900 // CSS px per second
 const ZOOM_SPEED = 1.9 // factor per second
 
+/** history.state marker of the entry pushed when a game screen opens (Back is intercepted). */
+const GAME_STATE_KEY = '5dchessGame'
+let mountedGames = 0
+
+const inGameEntry = (state: unknown): boolean =>
+  !!state && typeof state === 'object' && (state as Record<string, unknown>)[GAME_STATE_KEY] === true
+
+/** Screen areas covered by the HUD, relative to the game view. */
+function measureHud(view: HTMLElement, hud: HTMLElement): HudLayout {
+  const base = view.getBoundingClientRect()
+  const rect = (sel: string) => {
+    const el = hud.querySelector<HTMLElement>(sel)
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return r.width > 0 && r.height > 0 ? r : null
+  }
+  const pills = rect('.top-pills')
+  const clock = rect('.clock-panel')
+  const status = rect('.status')
+  // the right-edge column: its widest tab (the container itself spans the full height)
+  let tabsLeft = base.right
+  for (const el of hud.querySelectorAll<HTMLElement>('.side-tabs > *')) {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0) tabsLeft = Math.min(tabsLeft, r.left)
+  }
+  const gap = 6
+  const top = Math.max(pills ? pills.bottom - base.top + gap : 0, clock ? clock.bottom - base.top + gap : 0)
+  const bottom = status ? base.bottom - status.top + gap : 0
+  const right = base.right - tabsLeft + gap
+  const avoid = status ? [{ x: status.left - base.left, y: status.top - base.top, w: status.width, h: status.height }] : []
+  return { insets: { top, right, bottom, left: 0 }, avoid }
+}
+
 export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<MultiverseRenderer | null>(null)
   useSyncExternalStore(ctrl.subscribe, ctrl.getRev)
   const settings = useSettings()
   const [toasts, toast] = useToasts()
+  const hudRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [leaveAsk, setLeaveAsk] = useState(false)
+  const hudKey = useRef('')
+
+  /** Tell the renderer where the HUD is (framing margins, label exclusions). */
+  const syncHud = useCallback(() => {
+    const r = rendererRef.current
+    const view = hostRef.current
+    const hud = hudRef.current
+    if (!r?.setHud || !view || !hud) return
+    const layout = measureHud(view, hud)
+    const key = JSON.stringify(layout)
+    if (key === hudKey.current) return
+    hudKey.current = key
+    r.setHud(layout)
+  }, [])
 
   // renderer + controller wiring
   useEffect(() => {
     const host = hostRef.current!
     const r = createRenderer(host)
     rendererRef.current = r
+    hudKey.current = ''
+    syncHud() // before the first framing
     ctrl.setNoticeHandler(toast)
     ctrl.attach(r)
     // test hook (dev server, or ?debug on a deployed build)
@@ -51,22 +102,64 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
     host.addEventListener('contextmenu', onContext)
     const onHide = () => ctrl.saveNow()
     window.addEventListener('pagehide', onHide)
+    const onResize = () => syncHud()
+    window.addEventListener('resize', onResize)
     return () => {
       host.removeEventListener('contextmenu', onContext)
       window.removeEventListener('pagehide', onHide)
+      window.removeEventListener('resize', onResize)
       ctrl.setNoticeHandler(null)
       ctrl.detach()
       r.dispose()
       rendererRef.current = null
     }
-  }, [ctrl, toast])
+  }, [ctrl, toast, syncHud])
+
+  // the HUD's size and text change with the game state: keep the renderer informed
+  useLayoutEffect(() => {
+    syncHud()
+  })
+
+  // Browser Back leaves the page: keep an extra history entry while in a game and ask first.
+  useEffect(() => {
+    mountedGames++
+    if (!inGameEntry(history.state)) history.pushState({ ...(history.state ?? {}), [GAME_STATE_KEY]: true }, '')
+    const onPop = (e: PopStateEvent) => {
+      if (inGameEntry(e.state)) return // e.g. Forward back onto our entry
+      // re-arm the guard so a second Back is caught too, then ask
+      history.pushState({ ...(e.state ?? {}), [GAME_STATE_KEY]: true }, '')
+      setMenuOpen(false)
+      setLeaveAsk(true)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      mountedGames--
+      // Left the game another way (menu button, rematch hand-over...): drop our entry
+      // unless another game screen took over in the same update.
+      setTimeout(() => {
+        if (mountedGames === 0 && inGameEntry(history.state)) history.back()
+      }, 0)
+    }
+  }, [])
 
   useEffect(() => {
     ctrl.settingsChanged()
   }, [ctrl, settings])
 
+  /** "Leave game": online asks first (the seat is kept, no resignation); local saves and leaves. */
+  const requestLeave = useCallback(() => {
+    setMenuOpen(false)
+    if (ctrl.online && !ctrl.isOver && !ctrl.historyError) {
+      setLeaveAsk(true)
+      return
+    }
+    ctrl.saveNow()
+    onExit()
+  }, [ctrl, onExit])
+
   // hotkeys (the original's list from the "*" menu, plus Ctrl/Cmd+Z, Enter and Esc)
-  const modalOpen = menuOpen || settingsOpen
+  const modalOpen = menuOpen || settingsOpen || leaveAsk
   useEffect(() => {
     const held = new Set<string>()
     let raf = 0
@@ -92,15 +185,21 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
     }
     const onDown = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       const k = e.key.toLowerCase()
+      // Esc works even while a control (e.g. a checkbox in the "*" menu) has focus
       if (k === 'escape') {
-        if (menuOpen) setMenuOpen(false)
-        else if (settingsOpen) return
+        if (leaveAsk) setLeaveAsk(false)
+        else if (menuOpen) {
+          setMenuOpen(false)
+          if (t && t !== document.body && t.closest('.star-menu')) t.blur()
+        } else if (settingsOpen) return
+        else if (ctrl.historyError && !ctrl.isOver) return
         else if (ctrl.isOver && !ctrl.overlayDismissed) ctrl.dismissOverlay()
-        else ctrl.deselect()
+        else if (ctrl.selected) ctrl.deselect()
+        else setMenuOpen(true) // nothing to cancel: Esc opens the "*" menu (and with it "Leave game")
         return
       }
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
       if (modalOpen) return
       sound.unlock()
       const mod = e.ctrlKey || e.metaKey
@@ -164,7 +263,7 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
       window.removeEventListener('blur', onBlur)
       if (raf) cancelAnimationFrame(raf)
     }
-  }, [ctrl, menuOpen, settingsOpen, modalOpen])
+  }, [ctrl, menuOpen, settingsOpen, modalOpen, leaveAsk])
 
   const g = ctrl.game
   const session = ctrl.online
@@ -196,13 +295,18 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
   }
   if (!over && session && me && ctrl.opponentOnline === false && !waiting) line1 = 'Opponent disconnected - waiting…'
   if (ctrl.desynced) line1 = 'Resyncing with the server…'
+  const historyError = ctrl.historyError
+  if (historyError && !over) {
+    line1 = ''
+    line2 = 'Game stopped - invalid history'
+  }
 
   const showOverlay = over && !ctrl.overlayDismissed
 
   return (
     <div className="game">
       <div className="game-view" ref={hostRef} />
-      <div className="hud">
+      <div className="hud" ref={hudRef}>
         {/* top-centre pills */}
         <div className="top-pills">
           {piece ? (
@@ -237,7 +341,16 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
 
         {/* right-edge column */}
         <div className="side-tabs">
-          <button className={`tab tab-star ${menuOpen ? 'active' : ''}`} aria-label="Game menu" onClick={() => setMenuOpen((v) => !v)}>
+          <button
+            className={`tab tab-star ${menuOpen ? 'active' : ''}`}
+            aria-label="Game menu"
+            aria-expanded={menuOpen}
+            onClick={(e) => {
+              setMenuOpen((v) => !v)
+              // mouse/touch: don't leave the button focused (no ring after the menu closes)
+              if (e.detail > 0) e.currentTarget.blur()
+            }}
+          >
             <span>*</span>
           </button>
           <button
@@ -289,12 +402,64 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
           </div>
         )}
 
-        {over && ctrl.overlayDismissed && ctrl.rematchIncoming && !ctrl.rematchSent && (
+        {over && ctrl.overlayDismissed && ctrl.rematchIncoming && !ctrl.rematchSent && !ctrl.rematchCode && (
           <div className="banner panel">
             <span>Your opponent wants a rematch</span>
             <button className="pill small" onClick={() => ctrl.offerRematch()}>
               Accept
             </button>
+          </div>
+        )}
+
+        {over && ctrl.overlayDismissed && !!me && !!ctrl.rematchCode && (
+          <div className="banner panel">
+            <span>A rematch is ready</span>
+            <button className="pill small blue" onClick={() => ctrl.joinRematch()}>
+              Go to rematch
+            </button>
+          </div>
+        )}
+
+        {historyError && !over && (
+          <div className="overlay-wrap">
+            <div className="panel game-over" role="alertdialog" aria-label="Game history error">
+              <h2 className="smaller">This game can't continue</h2>
+              <div className="detail">
+                The game history contains an invalid move from {colorName(historyError.player)}; the game can't continue. The boards show
+                the position before that move.
+              </div>
+              <div className="buttons">
+                <button className="pill" onClick={onExit}>
+                  {session ? 'Leave to menu' : 'Main menu'}
+                </button>
+                <button className="pill small" onClick={() => void copy(ctrl.pgn(), '5D PGN')}>
+                  Export 5D PGN
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {leaveAsk && (
+          <div className="overlay-wrap" onPointerDown={(e) => e.target === e.currentTarget && setLeaveAsk(false)}>
+            <div className="panel game-over leave-ask" role="alertdialog" aria-label="Leave the game?">
+              <h2 className="smaller">Leave the game?</h2>
+              <div className="detail">{session ? 'You can rejoin from the menu.' : 'You can continue it from the menu.'}</div>
+              <div className="buttons">
+                <button
+                  className="pill"
+                  onClick={() => {
+                    setLeaveAsk(false)
+                    onExit()
+                  }}
+                >
+                  Leave
+                </button>
+                <button className="pill" autoFocus onClick={() => setLeaveAsk(false)}>
+                  Stay
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -308,7 +473,7 @@ export function GameScreen({ ctrl, onExit, onPlayAgain }: Props) {
             <StarMenu
               ctrl={ctrl}
               onClose={() => setMenuOpen(false)}
-              onExit={onExit}
+              onLeave={requestLeave}
               onPlayAgain={onPlayAgain}
               onSettings={() => {
                 setMenuOpen(false)
@@ -473,11 +638,11 @@ function ClockPanel({ ctrl }: { ctrl: GameController }) {
   if (!view) return null
   const session = ctrl.online
   const me = ctrl.myColor
-  const idleDelay = view.delayPerTimeline > 0 ? view.delayPerTimeline * Math.max(1, ctrl.activeTimelineCount()) : 0
   const row = (c: Color) => {
     const running = view.running === c
     const ms = c === 'white' ? view.white : view.black
-    const suffix = running ? (view.delay > 0 ? `+${Math.ceil(view.delay / 1000)}` : '') : idleDelay > 0 && view.running ? `+${idleDelay}` : ''
+    // only the side to move shows its remaining delay (docs/ui-spec.md: "W 20:00+5" / "B 19:54")
+    const suffix = running && view.delay > 0 ? `+${Math.ceil(view.delay / 1000)}` : ''
     const isOpp = !!session && !!me && c !== me
     return (
       <div className={`clock-row ${running ? 'running' : ''} ${view.flagged === c ? 'flagged' : ''} ${running && ms < 30000 ? 'low' : ''}`}>
@@ -517,11 +682,15 @@ function GameOver({ ctrl, onExit, onPlayAgain }: { ctrl: GameController; onExit(
         <h2>{title}</h2>
         <div className="detail">{detail}</div>
         <div className="buttons">
-          {session && me && (
+          {session && me && ctrl.rematchCode ? (
+            <button className="pill blue" onClick={() => ctrl.joinRematch()}>
+              Go to rematch
+            </button>
+          ) : session && me ? (
             <button className={`pill ${ctrl.rematchIncoming ? 'blue' : ''}`} disabled={ctrl.rematchSent} onClick={() => ctrl.offerRematch()}>
               {ctrl.rematchSent ? 'Rematch offered…' : ctrl.rematchIncoming ? 'Accept rematch' : 'Rematch'}
             </button>
-          )}
+          ) : null}
           {!session && onPlayAgain && (
             <button className="pill" onClick={onPlayAgain}>
               Play again
@@ -534,8 +703,8 @@ function GameOver({ ctrl, onExit, onPlayAgain }: { ctrl: GameController; onExit(
             View board
           </button>
         </div>
-        {session && me && ctrl.rematchIncoming && !ctrl.rematchSent && <div className="note">Your opponent wants a rematch (colours swap)</div>}
-        {session && me && ctrl.rematchSent && <div className="note">Waiting for your opponent to accept…</div>}
+        {session && me && !ctrl.rematchCode && ctrl.rematchIncoming && !ctrl.rematchSent && <div className="note">Your opponent wants a rematch (colours swap)</div>}
+        {session && me && !ctrl.rematchCode && ctrl.rematchSent && <div className="note">Waiting for your opponent to accept…</div>}
       </div>
     </div>
   )
@@ -546,14 +715,14 @@ function GameOver({ ctrl, onExit, onPlayAgain }: { ctrl: GameController; onExit(
 function StarMenu({
   ctrl,
   onClose,
-  onExit,
+  onLeave,
   onPlayAgain,
   onSettings,
   copy,
 }: {
   ctrl: GameController
   onClose(): void
-  onExit(): void
+  onLeave(): void
   onPlayAgain?(): void
   onSettings(): void
   copy(text: string, what: string): void
@@ -567,6 +736,9 @@ function StarMenu({
   const forfeitLabel = session ? 'Forfeit game' : `Forfeit game (${colorName(ctrl.game.player)})`
   return (
     <div className="panel star-menu" role="menu">
+      <button className="pill dark leave-pill" onClick={onLeave}>
+        {session ? 'Leave game' : 'Main menu'}
+      </button>
       <Check label="Enable sound" checked={s.sound} onChange={(v) => updateSettings({ sound: v })} />
       <Check label="Animations" checked={s.animations} onChange={(v) => updateSettings({ animations: v })} />
       {!session && <Check label="Auto perspective flip" checked={s.autoFlip} onChange={(v) => updateSettings({ autoFlip: v })} />}
@@ -601,7 +773,7 @@ function StarMenu({
           {session && me && (
             <button
               className="pill"
-              disabled={over || ctrl.drawOfferSent || !session.info.opponentJoined}
+              disabled={over || (ctrl.drawOfferSent && !ctrl.drawOfferIncoming) || !session.info.opponentJoined || !!ctrl.historyError}
               onClick={() => {
                 ctrl.offerDraw()
                 close()
@@ -632,9 +804,6 @@ function StarMenu({
       </button>
       <button className="pill small" onClick={onSettings}>
         Settings
-      </button>
-      <button className="pill small" onClick={onExit}>
-        {session ? 'Leave to menu' : 'Main menu'}
       </button>
       <div className="hotkeys">
         Hotkeys:

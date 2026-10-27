@@ -47,3 +47,28 @@ export function timeAgo(ms: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`
   return `${Math.floor(s / 86400)} d ago`
 }
+
+const RAW_NETWORK = /failed to fetch|networkerror|network ?request failed|load failed|fetch failed|ECONN|ERR_[A-Z_]+|socket hang up|timed? ?out/i
+const TECHNICAL = /^[A-Za-z]*Error\b|\bat \w+ \(|[{}]|\bfailed \(\d{3}\)|status \d{3}|\bundefined\b|JSON|Unexpected token|^[a-z]/
+
+/**
+ * A player-facing message for an error from the network layer. Raw text
+ * ("TypeError: Failed to fetch", "out of sync: expected index 1", ...) belongs in
+ * the console, not in a toast; messages the session already words for players
+ * pass through.
+ */
+export function friendlyError(raw: string): string {
+  const m = (raw || '').trim()
+  if (!m) return 'Something went wrong — please try again'
+  if (RAW_NETWORK.test(m)) return 'Connection lost — retrying…'
+  if (/out of sync/i.test(m)) return 'Game updated from another tab'
+  if (!TECHNICAL.test(m)) return m
+  if (/not your turn/i.test(m)) return "It's not your turn"
+  if (/game is over|already over/i.test(m)) return 'The game is already over'
+  if (/cancelled/i.test(m)) return 'This game was cancelled'
+  if (/not found/i.test(m)) return 'Game not found'
+  if (/full/i.test(m)) return 'That game is full'
+  if (/illegal|invalid|malformed/i.test(m)) return 'The server rejected that move'
+  if (/network|offline/i.test(m)) return 'Connection lost — retrying…'
+  return 'Something went wrong — please try again'
+}

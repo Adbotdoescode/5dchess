@@ -16,6 +16,7 @@ import { Toasts } from './ui/components/common'
 import { useToasts } from './ui/util'
 import { sound } from './ui/sound'
 import { KEYS, loadJson, removeKey, saveJson } from './ui/storage'
+import { friendlyError } from './ui/format'
 import './ui/ui.css'
 
 type Screen =
@@ -142,7 +143,8 @@ export default function App() {
           }
         }
         if (opts.resume) removeKey(KEYS.activeOnline)
-        toast(/not found/i.test(msg) ? `No game with code ${c}` : `Could not join: ${msg}`, 'error')
+        console.warn('[join]', msg)
+        toast(/not found/i.test(msg) ? `No game with code ${c}` : `Could not join: ${friendlyError(msg)}`, 'error')
         setScreen({ kind: 'menu', view: { kind: 'versus', tab: 'join' } })
       } finally {
         setBusy(false)
@@ -164,7 +166,8 @@ export default function App() {
         const session = await online.createGame({ variantId, color: o.color, clock: presetClock(o.clock), firstPlayer, firstActiveTimelines })
         enterSession(session)
       } catch (e) {
-        toast(`Could not create the game: ${e instanceof Error ? e.message : String(e)}`, 'error')
+        console.warn('[create]', e)
+        toast(`Could not create the game: ${friendlyError(e instanceof Error ? e.message : String(e))}`, 'error')
         setScreen({ kind: 'menu', view: { kind: 'versus', tab: 'create' } })
       } finally {
         setBusy(false)
@@ -214,16 +217,33 @@ export default function App() {
     window.addEventListener('keydown', unlock, { once: true })
     const code = online.parseJoinCode()
     if (code || loadJson<string>(KEYS.activeOnline)) preloadGameScreen()
+    let rawJoin: string | null = null
+    try {
+      rawJoin = new URL(location.href).searchParams.get('join')
+    } catch {
+      /* ignore */
+    }
+    if (!code && rawJoin !== null) {
+      // a ?join= link with a malformed code: say so instead of silently ignoring it
+      const url = new URL(location.href)
+      url.searchParams.delete('join')
+      history.replaceState(history.state, '', url.pathname + url.search + url.hash)
+      setTimeout(() => {
+        toast('Invalid game code', 'error')
+        setScreen({ kind: 'menu', view: { kind: 'versus', tab: 'join' } })
+      }, 0)
+      return
+    }
     if (code) {
       const url = new URL(location.href)
       url.searchParams.delete('join')
-      history.replaceState(null, '', url.pathname + url.search + url.hash)
+      history.replaceState(history.state, '', url.pathname + url.search + url.hash)
       setTimeout(() => void joinOnline(code), 0)
       return
     }
     const active = loadJson<string>(KEYS.activeOnline)
     if (active) setTimeout(() => void joinOnline(active, { resume: true }), 0)
-  }, [joinOnline])
+  }, [joinOnline, toast])
 
   // ------------------------------------------------------------ render
 
@@ -275,9 +295,23 @@ export default function App() {
             onToast={toast}
             onJoined={() => enterSession(screen.session)}
             onCancel={() => {
-              const code = screen.session.info.code
-              void leaveSession().then(() => online.forgetGame(code))
+              const session = screen.session
+              const code = session.info.code
               toMenu({ kind: 'versus', tab: 'create' })
+              if (sessionRef.current === session) {
+                sessionRef.current = null
+                removeKey(KEYS.activeOnline)
+              }
+              void (async () => {
+                // close the game on the server first (so the code stops working), then leave
+                try {
+                  await session.cancel()
+                } catch (e) {
+                  console.warn('[cancel]', e)
+                }
+                await session.leave().catch(() => {})
+                online.forgetGame(code)
+              })()
             }}
           />
         )}
@@ -348,7 +382,10 @@ function WaitingScreen({
       if (e.type === 'opponent-joined') {
         sound.play('notify')
         onJoined()
-      } else if (e.type === 'error') onToast(e.message, 'error')
+      } else if (e.type === 'error') {
+        console.warn('[online]', e.message)
+        onToast(friendlyError(e.message), 'error')
+      }
     })
   }, [session, onJoined, onToast])
   return <WaitingRoom session={session} onCancel={onCancel} onToast={onToast} />

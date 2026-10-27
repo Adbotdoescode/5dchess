@@ -1,5 +1,12 @@
-// Online sessions: Supabase RPCs (source of truth) + a Realtime broadcast
-// channel `game:<CODE>` (hints + presence). See AGENTS.md "Online play".
+// Online sessions: Supabase RPCs + the `game-action` Edge Function (source of
+// truth) + a Realtime broadcast channel `game:<CODE>` (hints + presence).
+// See AGENTS.md "Online play".
+//
+// Server authority: creating games, submitting actions and claiming results go
+// through the Edge Function, which replays the game with the rules engine and
+// rejects illegal actions; checkmate/stalemate are only recorded by the server.
+// Draw offers, rematches and cancelling are token-checked RPCs whose state is
+// persisted (info.drawOffer / rematchOffer / rematchCode / cancelled).
 //
 // Sync rules:
 // * Broadcasts are untrusted hints (anyone with the code can send on the
@@ -40,6 +47,12 @@ import type {
 
 export interface RpcError {
   message: string
+  /** Machine-readable reason from the Edge Function (e.g. 'illegal', 'out_of_sync'). */
+  code?: string
+  /** HTTP status (Edge Function calls). */
+  status?: number
+  /** The request never reached the server (offline, DNS, CORS, ...). */
+  network?: boolean
 }
 export interface RpcResponse {
   data: unknown
@@ -60,14 +73,46 @@ export interface NetChannel {
 
 export interface NetClient {
   rpc(fn: string, args: Record<string, unknown>): PromiseLike<RpcResponse>
+  /** Call an Edge Function with a JSON body. */
+  invoke(fn: string, body: Record<string, unknown>): PromiseLike<RpcResponse>
   channel(name: string, presenceKey: string): NetChannel
 }
+
+/** Name of the Edge Function that validates actions and results. */
+export const GAME_FUNCTION = 'game-action'
 
 /** Minimal shape of SupabaseClient we rely on (kept loose to avoid generic noise). */
 interface SupabaseLike {
   rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>
+  functions: {
+    invoke(fn: string, opts: { body: unknown }): Promise<{ data: unknown; error: unknown }>
+  }
   channel(name: string, opts?: unknown): unknown
   removeChannel(ch: never): Promise<unknown>
+}
+
+const NETWORK_RE = /failed to fetch|fetch failed|networkerror|network request failed|load failed|err_internet|offline/i
+
+async function invokeFunction(client: SupabaseLike, fn: string, body: unknown): Promise<RpcResponse> {
+  let res: { data: unknown; error: unknown }
+  try {
+    res = await client.functions.invoke(fn, { body })
+  } catch (e) {
+    return { data: null, error: { message: errorMessage(e), network: true } }
+  }
+  if (!res.error) return { data: res.data, error: null }
+  const err = res.error as { name?: string; message?: string; context?: unknown }
+  if (err.name === 'FunctionsHttpError' && err.context && typeof (err.context as Response).json === 'function') {
+    const ctx = err.context as Response
+    try {
+      const j = (await ctx.clone().json()) as { error?: string; code?: string }
+      return { data: null, error: { message: j.error ?? `${fn} failed (${ctx.status})`, code: j.code, status: ctx.status } }
+    } catch {
+      return { data: null, error: { message: `${fn} failed (${ctx.status})`, status: ctx.status } }
+    }
+  }
+  if (err.name === 'FunctionsFetchError') return { data: null, error: { message: err.message ?? 'network error', network: true } }
+  return { data: null, error: { message: err.message ?? `${fn} failed` } }
 }
 
 interface RealtimeChannelLike {
@@ -126,7 +171,16 @@ export function fromSupabase(supabase: SupabaseClient): NetClient {
   }
 
   return {
-    rpc: (fn, args) => client.rpc(fn, args),
+    rpc: async (fn, args) => {
+      try {
+        const { data, error } = await client.rpc(fn, args)
+        if (error && NETWORK_RE.test(error.message)) return { data, error: { message: error.message, network: true } }
+        return { data, error }
+      } catch (e) {
+        return { data: null, error: { message: errorMessage(e), network: true } }
+      }
+    },
+    invoke: (fn, body) => invokeFunction(client, fn, body),
     channel(name, presenceKey) {
       const member: ChannelMember = { bcast: new Map(), presence: [], status: null }
       let sh: SharedChannel | null = null
@@ -213,7 +267,7 @@ interface Snapshot {
   role: OnlineRole
   actions: Action[]
   actionTimes: (number | null)[]
-  /** Per action: submitter's active-timeline count for the start of the next turn. */
+  /** Per action: active-timeline count at the start of the next turn (server-computed). */
   nextActiveTimelines: (number | null)[]
   firstActiveTimelines: number
   result: GameResult
@@ -224,6 +278,10 @@ interface Snapshot {
   endedAt: number | null
   serverNow: number | null
   clockMs: null | { white: number; black: number }
+  drawOffer: Color | null
+  rematchOffer: Color | null
+  rematchCode: string | null
+  cancelled: boolean
 }
 
 function isColor(v: unknown): v is Color {
@@ -253,6 +311,7 @@ export function parseSnapshot(data: unknown): Snapshot {
         }
       : null
   const cm = d.clockMs as Record<string, unknown> | null | undefined
+  const rematchCode = typeof d.rematchCode === 'string' && isValidCode(d.rematchCode) ? normalizeCode(d.rematchCode) : null
   return {
     code: d.code,
     variantId: String(d.variantId ?? ''),
@@ -269,6 +328,10 @@ export function parseSnapshot(data: unknown): Snapshot {
     endedAt: parseServerTime(d.endedAt),
     serverNow: parseServerTime(d.serverNow),
     clockMs: cm && typeof cm === 'object' ? { white: Number(cm.white), black: Number(cm.black) } : null,
+    drawOffer: isColor(d.drawOffer) ? d.drawOffer : null,
+    rematchOffer: isColor(d.rematchOffer) ? d.rematchOffer : null,
+    rematchCode,
+    cancelled: d.cancelled === true,
   }
 }
 
@@ -281,14 +344,82 @@ const turnStarts = (first: number, nexts: ReadonlyArray<number | null>) => [firs
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 // ---------------------------------------------------------------------------
+// Errors: server reasons -> messages fit for the UI.
+
+/** An online call failed. `message` is user-facing; `reason` is the raw server text. */
+export class NetError extends Error {
+  /** Raw server/database message, for logs and tests. */
+  readonly reason: string
+  /** Machine-readable code ('illegal', 'out_of_sync', 'network', ...) when known. */
+  readonly code: string
+  readonly network: boolean
+  constructor(message: string, reason: string, code: string, network = false) {
+    super(message)
+    this.name = 'NetError'
+    this.reason = reason
+    this.code = code
+    this.network = network
+  }
+}
+
+export const OFFLINE_RETRYING = "You're offline — retrying…"
+export const OFFLINE_GAVE_UP = "Couldn't reach the server. Check your connection and try again."
+
+const FRIENDLY: [RegExp, string, string][] = [
+  [/out of sync/i, 'out_of_sync', 'Out of sync with the server — reloaded the latest position.'],
+  [/not your turn/i, 'not_your_turn', "It's not your turn."],
+  [/does not match your seat/i, 'wrong_seat', "That move isn't for your side."],
+  [/game is over/i, 'game_over', 'The game is already over.'],
+  [/game is not over/i, 'not_finished', "The game isn't over yet."],
+  [/waiting for opponent/i, 'waiting', 'Waiting for your opponent to join.'],
+  [/game was cancelled/i, 'cancelled', 'This game was cancelled.'],
+  [/game not found/i, 'not_found', 'Game not found. Check the code.'],
+  [/game is full/i, 'full', 'That game already has two players (game is full).'],
+  [/not a player/i, 'not_player', "You don't have a seat in this game."],
+  [/opponent already joined/i, 'joined', 'Your opponent has already joined, so the game can no longer be cancelled.'],
+  [/no draw offer/i, 'no_draw_offer', "There's no draw offer from your opponent to answer."],
+  [/only resign for yourself/i, 'forbidden', 'You can only resign for yourself.'],
+  [/clock not expired/i, 'clock_not_expired', "The clock hasn't run out yet."],
+  [/game is not timed/i, 'untimed', 'This game has no clock.'],
+  [/no checkmate or stalemate/i, 'not_over', 'The server found a legal move, so the game goes on.'],
+  [/could not confirm the end/i, 'inconclusive', "The server couldn't confirm the end of the game yet, so play continues."],
+  [/history is invalid/i, 'corrupt_history', "This game's history is invalid on the server, so it can't continue."],
+  [/unknown variant/i, 'unknown_variant', "The server doesn't know this variant."],
+  [/game too long/i, 'too_long', 'This game has reached the maximum length.'],
+]
+
+/** Turn a raw server error into a NetError with a user-facing message. */
+export function toNetError(err: RpcError): NetError {
+  const raw = err.message || 'request failed'
+  if (err.network) return new NetError(OFFLINE_GAVE_UP, raw, 'network', true)
+  if (err.code === 'illegal' || /illegal action|malformed (move|action)/i.test(raw)) {
+    const detail = raw.replace(/^illegal action:\s*/i, '')
+    return new NetError(`That move was rejected by the server: ${detail}.`, raw, 'illegal')
+  }
+  for (const [re, code, message] of FRIENDLY) if (re.test(raw)) return new NetError(message, raw, err.code ?? code)
+  if (err.status !== undefined && err.status >= 500) {
+    return new NetError('The server had a problem. Please try again.', raw, err.code ?? 'server')
+  }
+  return new NetError(`The server rejected that (${raw}).`, raw, err.code ?? 'rejected')
+}
+
+/** Worth retrying automatically (the request may not have reached the server). */
+const retryable = (e: unknown) =>
+  e instanceof NetError && (e.network || e.code === 'server' || e.code === 'internal' || e.code === 'WORKER_LIMIT')
+
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 10000, 15000]
+
+// ---------------------------------------------------------------------------
 
 interface Ctx {
   client: NetClient
   seats: SeatStore
   env: NetEnv
   offset: ClockOffsetEstimator
-  /** Calls an RPC, records a clock-offset sample, returns the parsed snapshot. */
+  /** Calls an RPC, records a clock-offset sample, returns the parsed snapshot. Throws NetError. */
   call(fn: string, args: Record<string, unknown>): Promise<Snapshot>
+  /** Same through the game-action Edge Function (body.op selects the operation). */
+  callFn(body: Record<string, unknown>): Promise<Snapshot>
   createRaw(opts: {
     variantId: string
     color: Color | 'random'
@@ -298,14 +429,14 @@ interface Ctx {
   }): Promise<{ token: string; snap: Snapshot }>
 }
 
+/** Broadcast hints. Every one of them only triggers a database read. */
 type BroadcastMsg =
   | { t: 'action'; index: number; at?: number | null }
   | { t: 'result' }
   | { t: 'joined' }
-  | { t: 'draw-offer' }
-  | { t: 'draw-declined' }
-  | { t: 'rematch-offer' }
-  | { t: 'rematch-start'; code: string }
+  | { t: 'draw' }
+  | { t: 'rematch' }
+  | { t: 'cancelled' }
 
 const BROADCAST_EVENT = 'msg'
 const WAITING_POLL_MS = 4000
@@ -325,9 +456,6 @@ export class GameSession implements OnlineSession {
   private lastSync = 0
   private pollHandle: unknown = null
   private offWake: (() => void) | null = null
-  private ownRematchOffer = false
-  private opponentRematchOffer = false
-  private rematchStarted = false
   private left = false
 
   constructor(ctx: Ctx, token: string, snap: Snapshot) {
@@ -351,7 +479,12 @@ export class GameSession implements OnlineSession {
       clockMsAt: snap.serverNow,
       firstActiveTimelines: snap.firstActiveTimelines,
       activeTimelinesAtTurnStart: turnStarts(snap.firstActiveTimelines, snap.nextActiveTimelines),
+      drawOffer: snap.drawOffer,
+      rematchOffer: snap.rematchOffer,
+      rematchCode: snap.rematchCode,
+      cancelled: snap.cancelled,
     }
+    if (snap.rematchCode) this.adoptRematchSeat(snap.rematchCode)
     this.lastSync = ctx.env.now()
   }
 
@@ -395,23 +528,48 @@ export class GameSession implements OnlineSession {
   async submitAction(index: number, action: Action, opts?: { nextActiveTimelines?: number }): Promise<void> {
     if (this.state.role === 'spectator') throw this.fail('Spectators cannot move')
     this.pendingIndex = index
-    let snap: Snapshot
+    let snap: Snapshot | undefined
+    let retried = false
     try {
-      snap = await this.ctx.call('submit_action', {
-        p_code: this.state.code,
-        p_token: this.token,
-        p_index: index,
-        p_action: action,
-        p_next_active_timelines: opts?.nextActiveTimelines ?? null,
-      })
-    } catch (e) {
-      this.pendingIndex = null
-      const message = errorMessage(e)
-      if (/out of sync|not your turn|game is over/i.test(message)) {
-        await this.resync().catch(() => {})
+      for (let attempt = 0; ; attempt++) {
+        try {
+          snap = await this.ctx.callFn({
+            op: 'submit',
+            code: this.state.code,
+            token: this.token,
+            index,
+            action,
+            nextActiveTimelines: opts?.nextActiveTimelines ?? null,
+          })
+          break
+        } catch (e) {
+          if (retryable(e) && attempt < RETRY_DELAYS_MS.length && !this.left) {
+            if (!retried) this.emit({ type: 'error', message: OFFLINE_RETRYING })
+            retried = true
+            await this.sleep(RETRY_DELAYS_MS[attempt])
+            continue
+          }
+          if (retried && e instanceof NetError && e.code === 'out_of_sync') {
+            // An earlier attempt may have been stored before its response was lost.
+            await this.resync().catch(() => {})
+            const stored = this.state.actions[index]
+            if (stored && stored.player === action.player && this.state.actions.length === index + 1) {
+              this.broadcast({ t: 'action', index, at: this.state.actionTimes[index] })
+              return
+            }
+          }
+          throw e
+        }
       }
-      throw this.fail(message)
+    } catch (e) {
+      const err = this.asNetError(e)
+      if (/out_of_sync|not_your_turn|game_over|cancelled/.test(err.code)) await this.resync().catch(() => {})
+      throw this.fail(err)
+    } finally {
+      this.pendingIndex = null
     }
+    if (!snap) throw this.fail('The server sent an unexpected response. Please try again.')
+    this.pendingIndex = index
     this.apply(snap)
     this.pendingIndex = null
     if (snap.actions.length <= index) {
@@ -425,34 +583,42 @@ export class GameSession implements OnlineSession {
     if (this.state.role === 'spectator') throw this.fail('Spectators cannot set a result')
     for (let attempt = 0; ; attempt++) {
       try {
-        const snap = await this.ctx.call('set_result', {
-          p_code: this.state.code,
-          p_token: this.token,
-          p_result: result,
-        })
-        // Our own result is not echoed as an event; a different (earlier) one is.
+        const snap =
+          result.kind === 'draw-agreed'
+            ? await this.ctx.call('answer_draw', { p_code: this.state.code, p_token: this.token, p_accept: true })
+            : await this.ctx.callFn({ op: 'result', code: this.state.code, token: this.token, result })
+        // Our own result is not echoed as an event; a different one (an earlier
+        // result, or the server's own verdict for a mate claim) is.
         if (sameJson(snap.result, result) && this.state.result.kind === 'ongoing') {
           this.state.result = snap.result
+          this.touchRecent()
         }
         this.apply(snap)
         this.broadcast({ t: 'result' })
         return
       } catch (e) {
-        const message = errorMessage(e)
-        const m = /clock not expired: (-?\d+) ms/i.exec(message)
+        const err = this.asNetError(e)
+        const m = /clock not expired: (-?\d+) ms/i.exec(err.reason)
         if (m && attempt < 3) {
           // Our clock estimate ran slightly ahead of the server; retry when it agrees.
-          await new Promise<void>((r) => this.ctx.env.setTimeout(r, Math.min(Number(m[1]), 5000) + 100))
+          await this.sleep(Math.min(Number(m[1]), 5000) + 100)
           continue
         }
-        throw this.fail(message)
+        if (retryable(err) && attempt < 3) {
+          await this.sleep(RETRY_DELAYS_MS[attempt])
+          continue
+        }
+        if (err.code === 'no_draw_offer' || err.code === 'not_over' || err.code === 'inconclusive') {
+          await this.resync().catch(() => {})
+        }
+        throw this.fail(err)
       }
     }
   }
 
   offerDraw(): void {
     if (this.state.role === 'spectator') return
-    this.broadcast({ t: 'draw-offer' })
+    void this.rpcAction('offer_draw', {}, { t: 'draw' })
   }
 
   answerDraw(accept: boolean): void {
@@ -460,22 +626,31 @@ export class GameSession implements OnlineSession {
     if (accept) {
       this.setResult({ kind: 'draw-agreed' }).catch(() => {})
     } else {
-      this.broadcast({ t: 'draw-declined' })
+      void this.rpcAction('answer_draw', { p_accept: false }, { t: 'draw' })
     }
   }
 
   offerRematch(): void {
-    if (this.state.role === 'spectator' || this.rematchStarted) return
-    if (this.opponentRematchOffer) {
-      void this.startRematch()
-      return
-    }
-    this.ownRematchOffer = true
-    this.broadcast({ t: 'rematch-offer' })
+    if (this.state.role === 'spectator' || this.state.rematchCode) return
+    void this.rpcAction('offer_rematch', {}, { t: 'rematch' })
   }
 
   acceptRematch(): void {
     this.offerRematch()
+  }
+
+  async cancel(): Promise<void> {
+    if (this.state.role === 'spectator') throw this.fail('Spectators cannot cancel a game')
+    let snap: Snapshot
+    try {
+      snap = await this.ctx.call('cancel_game', { p_code: this.state.code, p_token: this.token })
+    } catch (e) {
+      throw this.fail(this.asNetError(e))
+    }
+    this.apply(snap)
+    this.broadcast({ t: 'cancelled' })
+    this.ctx.seats.forget(this.state.code)
+    await this.leave(false)
   }
 
   resync(): Promise<void> {
@@ -499,13 +674,13 @@ export class GameSession implements OnlineSession {
     return this.syncing
   }
 
-  async leave(): Promise<void> {
+  async leave(remember = true): Promise<void> {
     if (this.left) return
     this.left = true
     if (this.pollHandle !== null) this.ctx.env.clearInterval(this.pollHandle)
     this.offWake?.()
     this.listeners.clear()
-    this.touchRecent()
+    if (remember) this.touchRecent()
     const ch = this.channel
     this.channel = null
     if (ch) await ch.unsubscribe().catch(() => {})
@@ -523,9 +698,31 @@ export class GameSession implements OnlineSession {
     }
   }
 
-  private fail(message: string): Error {
-    this.emit({ type: 'error', message })
-    return new Error(message)
+  private fail(e: string | NetError): Error {
+    const err = typeof e === 'string' ? new NetError(e, e, 'client') : e
+    this.emit({ type: 'error', message: err.message })
+    return err
+  }
+
+  private asNetError(e: unknown): NetError {
+    return e instanceof NetError ? e : new NetError(errorMessage(e), errorMessage(e), 'client')
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise<void>((r) => this.ctx.env.setTimeout(r, ms))
+  }
+
+  /** A token-checked RPC returning the game; merges the snapshot and hints the opponent. */
+  private async rpcAction(fn: string, args: Record<string, unknown>, hint: BroadcastMsg): Promise<void> {
+    try {
+      const snap = await this.ctx.call(fn, { p_code: this.state.code, p_token: this.token, ...args })
+      this.apply(snap)
+      this.broadcast(hint)
+    } catch (e) {
+      const err = this.asNetError(e)
+      this.fail(err)
+      await this.resync().catch(() => {})
+    }
   }
 
   private backgroundSync(): void {
@@ -535,11 +732,23 @@ export class GameSession implements OnlineSession {
 
   private poll(): void {
     const s = this.state
-    if (this.left) return
+    if (this.left || s.cancelled) return
     if (!s.opponentJoined) return this.backgroundSync()
-    if (s.result.kind !== 'ongoing') return
+    const sinceSync = this.ctx.env.now() - this.lastSync
+    if (s.result.kind !== 'ongoing') {
+      // Waiting for the opponent to answer our rematch offer.
+      if (s.role !== 'spectator' && s.rematchOffer === s.role && !s.rematchCode) this.backgroundSync()
+      return
+    }
     const waitingOnOther = s.role === 'spectator' || sideToMove(s.actions, s.firstPlayer) !== s.role
-    if (waitingOnOther && this.ctx.env.now() - this.lastSync >= OPPONENT_TURN_POLL_MS) this.backgroundSync()
+    const offerOut = s.role !== 'spectator' && s.drawOffer === s.role
+    if ((waitingOnOther || offerOut) && sinceSync >= OPPONENT_TURN_POLL_MS) this.backgroundSync()
+  }
+
+  /** The rematch reuses both seat token hashes, so our token also owns our seat there. */
+  private adoptRematchSeat(code: string): void {
+    if (this.state.role === 'spectator') return
+    if (!this.ctx.seats.getToken(code)) this.ctx.seats.setToken(code, this.token)
   }
 
   /** Merge an authoritative snapshot, emitting events for anything new. */
@@ -547,9 +756,10 @@ export class GameSession implements OnlineSession {
     const s = this.state
     s.serverTimeOffset = this.ctx.offset.offset
     const localLen = s.actions.length
+    const stale = snap.actions.length < localLen
     let reset = false
 
-    if (snap.actions.length >= localLen) {
+    if (!stale) {
       // Check the overlap still agrees (cheap: last shared element).
       if (localLen > 0 && !sameJson(snap.actions[localLen - 1], s.actions[localLen - 1])) {
         reset = true
@@ -587,7 +797,7 @@ export class GameSession implements OnlineSession {
     }
     // else: stale snapshot (server list is append-only) – ignore its actions.
 
-    if (snap.clockMs && snap.serverNow !== null && snap.actions.length >= localLen) {
+    if (snap.clockMs && snap.serverNow !== null && !stale) {
       s.clockMs = snap.clockMs
       s.clockMsAt = snap.serverNow
     }
@@ -595,6 +805,7 @@ export class GameSession implements OnlineSession {
     if (snap.endedAt !== null) s.endedAt = snap.endedAt
     s.firstPlayer = snap.firstPlayer
     if (!s.clock && snap.clock) s.clock = snap.clock
+    if (snap.cancelled) s.cancelled = true
 
     if (reset) this.emit({ type: 'reset', info: s })
 
@@ -604,18 +815,51 @@ export class GameSession implements OnlineSession {
       this.touchRecent()
     }
 
+    const ended = snap.result.kind !== 'ongoing' || s.result.kind !== 'ongoing'
+    if (!stale) this.applyDrawOffer(snap.drawOffer, snap.actions.length > localLen, ended)
+
     if (snap.result.kind !== 'ongoing' && !sameJson(snap.result, s.result)) {
       s.result = snap.result
       this.emit({ type: 'result', result: snap.result })
       this.touchRecent()
     }
+
+    this.applyRematch(snap)
+  }
+
+  private applyDrawOffer(next: Color | null, actionsGrew: boolean, ended: boolean): void {
+    const s = this.state
+    const prev = s.drawOffer
+    s.drawOffer = next
+    if (prev === next || s.role === 'spectator' || ended) return
+    const opp = opposite(s.role)
+    if (next === opp) this.emit({ type: 'draw-offer' })
+    else if (prev === s.role) this.emit({ type: 'draw-declined', reason: actionsGrew ? 'expired' : 'declined' })
+    else if (prev === opp) this.emit({ type: 'draw-offer-withdrawn' })
+  }
+
+  private applyRematch(snap: Snapshot): void {
+    const s = this.state
+    const player = s.role !== 'spectator'
+    if (snap.rematchCode && !s.rematchCode) {
+      s.rematchCode = snap.rematchCode
+      s.rematchOffer = null
+      this.adoptRematchSeat(snap.rematchCode)
+      if (player) this.emit({ type: 'rematch-start', code: snap.rematchCode })
+      return
+    }
+    if (s.rematchCode) return
+    const prev = s.rematchOffer
+    s.rematchOffer = snap.rematchOffer
+    if (player && snap.rematchOffer && snap.rematchOffer !== prev && snap.rematchOffer !== s.role) {
+      this.emit({ type: 'rematch-offer' })
+    }
   }
 
   private onBroadcast(payload: unknown): void {
     if (this.left || !payload || typeof payload !== 'object') return
-    const msg = payload as BroadcastMsg
+    const msg = payload as { t?: unknown; index?: unknown }
     const s = this.state
-    const player = s.role !== 'spectator'
     switch (msg.t) {
       case 'action':
         // De-dup; otherwise verify against the database (also covers gaps).
@@ -628,30 +872,19 @@ export class GameSession implements OnlineSession {
       case 'joined':
         if (!s.opponentJoined) this.backgroundSync()
         return
+      case 'draw':
       case 'draw-offer':
-        if (player && s.result.kind === 'ongoing') this.emit({ type: 'draw-offer' })
-        return
       case 'draw-declined':
-        if (player) this.emit({ type: 'draw-declined' })
+        if (s.result.kind === 'ongoing') this.backgroundSync()
         return
+      case 'rematch':
       case 'rematch-offer':
-        if (!player || this.rematchStarted) return
-        this.opponentRematchOffer = true
-        if (this.ownRematchOffer) {
-          // Both offered at once: the old game's white creates the new game.
-          if (s.role === 'white') void this.startRematch()
-        } else {
-          this.emit({ type: 'rematch-offer' })
-        }
+      case 'rematch-start':
+        if (!s.rematchCode) this.backgroundSync()
         return
-      case 'rematch-start': {
-        if (!player || typeof msg.code !== 'string') return
-        const code = normalizeCode(msg.code)
-        if (!isValidCode(code) || code === s.code) return
-        this.rematchStarted = true
-        this.emit({ type: 'rematch-start', code })
+      case 'cancelled':
+        this.backgroundSync()
         return
-      }
     }
   }
 
@@ -669,25 +902,6 @@ export class GameSession implements OnlineSession {
     if (online && !s.opponentJoined) this.backgroundSync()
   }
 
-  private async startRematch(): Promise<void> {
-    if (this.rematchStarted || this.state.role === 'spectator') return
-    this.rematchStarted = true
-    try {
-      const { snap } = await this.ctx.createRaw({
-        variantId: this.state.variantId,
-        color: opposite(this.state.role),
-        clock: this.state.clock,
-        firstPlayer: this.state.firstPlayer,
-        firstActiveTimelines: this.state.firstActiveTimelines,
-      })
-      this.broadcast({ t: 'rematch-start', code: snap.code })
-      this.emit({ type: 'rematch-start', code: snap.code })
-    } catch (e) {
-      this.rematchStarted = false
-      this.fail(errorMessage(e))
-    }
-  }
-
   private broadcast(msg: BroadcastMsg): void {
     const ch = this.channel
     if (!ch || this.left) return
@@ -700,7 +914,7 @@ export class GameSession implements OnlineSession {
       code: this.state.code,
       variantId: this.state.variantId,
       color: this.state.role,
-      finished: this.state.result.kind !== 'ongoing',
+      finished: this.state.result.kind !== 'ongoing' || this.state.cancelled,
     })
   }
 }
@@ -736,6 +950,19 @@ export function createOnlineApi(opts: OnlineApiOptions = {}): OnlineApi {
   const env = opts.env ?? browserEnv()
   const offset = new ClockOffsetEstimator()
 
+  const finish = (label: string, sent: number, res: RpcResponse): Snapshot => {
+    const received = env.now()
+    if (res.error) throw toNetError({ ...res.error, message: res.error.message || `${label} failed` })
+    let snap: Snapshot
+    try {
+      snap = parseSnapshot(res.data)
+    } catch (e) {
+      throw new NetError('The server sent an unexpected response. Please try again.', errorMessage(e), 'server')
+    }
+    if (snap.serverNow !== null) offset.add(sent, received, snap.serverNow)
+    return snap
+  }
+
   const ctx: Ctx = {
     get client() {
       return getClient()
@@ -747,22 +974,22 @@ export function createOnlineApi(opts: OnlineApiOptions = {}): OnlineApi {
     offset,
     async call(fn, args) {
       const sent = env.now()
-      const { data, error } = await getClient().rpc(fn, args)
-      const received = env.now()
-      if (error) throw new Error(error.message || `${fn} failed`)
-      const snap = parseSnapshot(data)
-      if (snap.serverNow !== null) offset.add(sent, received, snap.serverNow)
-      return snap
+      return finish(fn, sent, await getClient().rpc(fn, args))
+    },
+    async callFn(body) {
+      const sent = env.now()
+      return finish(GAME_FUNCTION, sent, await getClient().invoke(GAME_FUNCTION, body))
     },
     async createRaw(o) {
       const token = generateToken()
-      const snap = await ctx.call('create_game', {
-        p_variant: o.variantId,
-        p_color: o.color,
-        p_token: token,
-        p_clock: o.clock,
-        p_first: o.firstPlayer ?? 'white',
-        p_first_active_timelines: o.firstActiveTimelines ?? 1,
+      // The server derives the first player and starting active timelines from
+      // the variant; firstPlayer / firstActiveTimelines are not sent.
+      const snap = await ctx.callFn({
+        op: 'create',
+        variantId: o.variantId,
+        color: o.color,
+        token,
+        clock: o.clock,
       })
       getSeats().setToken(snap.code, token)
       if (snap.role !== 'spectator') getSeats().touch({ code: snap.code, variantId: snap.variantId, color: snap.role })
@@ -784,7 +1011,7 @@ export function createOnlineApi(opts: OnlineApiOptions = {}): OnlineApi {
 
     async joinGame(rawCode) {
       const code = normalizeCode(rawCode)
-      if (!isValidCode(code)) throw new Error('Invalid game code')
+      if (!isValidCode(code)) throw new NetError('Invalid game code', 'invalid code', 'invalid_code')
       const existing = getSeats().getToken(code)
       const token = existing ?? generateToken()
       // Persist before calling so a lost response can still be resumed.
@@ -809,7 +1036,7 @@ export function createOnlineApi(opts: OnlineApiOptions = {}): OnlineApi {
 
     async spectateGame(rawCode) {
       const code = normalizeCode(rawCode)
-      if (!isValidCode(code)) throw new Error('Invalid game code')
+      if (!isValidCode(code)) throw new NetError('Invalid game code', 'invalid code', 'invalid_code')
       const token = getSeats().getToken(code) ?? generateToken()
       const snap = await ctx.call('get_game', { p_code: code, p_token: token })
       return open(token, snap)

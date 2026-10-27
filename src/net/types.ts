@@ -104,6 +104,24 @@ export interface OnlineGameInfo {
    * null where the submitter didn't report it (untimed games may omit it).
    */
   activeTimelinesAtTurnStart: (number | null)[]
+
+  // ---- Added for the server-authoritative backend (persisted in the database) ----
+
+  /**
+   * Side with an open draw offer, or null. Cleared when any action is
+   * submitted, when the offer is declined and when the game ends. After a
+   * reload, `drawOffer === opposite(role)` means "show Accept/Decline".
+   */
+  drawOffer: Color | null
+  /** Side that asked for a rematch of this finished game (null once the rematch exists). */
+  rematchOffer: Color | null
+  /**
+   * Code of the rematch game once it has been created (colours swapped, both
+   * seats already assigned to the same two players). Join it with joinGame(code).
+   */
+  rematchCode: string | null
+  /** The creator cancelled this game before anyone joined (joins now fail). */
+  cancelled: boolean
 }
 
 export type OnlineEvent =
@@ -120,8 +138,15 @@ export type OnlineEvent =
       nextActiveTimelines?: number
     }
   | { type: 'result'; result: GameResult }
+  /** The opponent offered a draw (info.drawOffer is now their colour). */
   | { type: 'draw-offer' }
-  | { type: 'draw-declined' }
+  /**
+   * Our draw offer is gone: 'declined' by the opponent, or 'expired' because an
+   * action was submitted (offers only last until the next submit).
+   */
+  | { type: 'draw-declined'; reason?: 'declined' | 'expired' }
+  /** The opponent's draw offer lapsed (an action was submitted); hide Accept/Decline. */
+  | { type: 'draw-offer-withdrawn' }
   | { type: 'rematch-offer' }
   /** Rematch accepted: a new game with swapped colors. */
   | { type: 'rematch-start'; code: string }
@@ -137,11 +162,19 @@ export interface OnlineSession {
   /** Live view of the game, updated in place by the session (re-read fields; arrays may be replaced on 'reset'). */
   readonly info: OnlineGameInfo
   /**
-   * Send our submitted action (index must equal current action count).
-   * `nextActiveTimelines`: active timelines at the start of the opponent's
-   * next turn per our engine (required for timed games, 1..1000).
+   * Send our submitted action (index must equal current action count). The
+   * server replays the game, rejects illegal actions ("That move was rejected
+   * by the server: ...") and computes the active-timeline count itself;
+   * `nextActiveTimelines` is only logged by the server if it disagrees.
+   * Network failures are retried for a while ('error' event "You're offline — retrying…").
    */
   submitAction(index: number, action: Action, opts?: { nextActiveTimelines?: number }): Promise<void>
+  /**
+   * Claim a result. resignation: only for yourself; timeout: checked against
+   * the server clock; draw-agreed: accepts the opponent's stored offer;
+   * checkmate/stalemate: asks the server to verify with its own search (the
+   * server records ITS verdict; it also detects mates by itself after every submit).
+   */
   setResult(result: GameResult): Promise<void>
   offerDraw(): void
   answerDraw(accept: boolean): void
@@ -159,6 +192,12 @@ export interface OnlineSession {
   serverNow(): number
   /** Fetch the authoritative state now and emit anything missed. */
   resync(): Promise<void>
+  /**
+   * Cancel a game nobody has joined yet (creator only): joins then fail with
+   * "This game was cancelled". Also forgets the game locally and leaves.
+   * Rejects (with a friendly message) once the opponent has joined.
+   */
+  cancel(): Promise<void>
 }
 
 /** A game this browser holds a seat token for (for "rejoin" lists). */

@@ -277,6 +277,17 @@
   align-items: flex-end;
   gap: 0.6em;
   pointer-events: none;
+  /* The column is ~31em tall: shrink it on short views (e.g. 300% browser zoom) so the
+     bottom tabs stay reachable, and scroll as a last resort. */
+  font-size: min(1em, calc((100vh - 1em) / 31.5));
+  font-size: min(1em, calc((100dvh - 1em) / 31.5));
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-bottom: 0.3em;
+}
+.side-tabs::-webkit-scrollbar {
+  display: none;
 }
 .side-tabs > * {
   pointer-events: auto;
@@ -306,6 +317,21 @@
 .tab.active {
   --fill: var(--green);
   --lip: var(--green-lip);
+}
+
+/* Focus rings only for keyboard users. */
+.tab:focus,
+.pill:focus,
+.x-btn:focus,
+.float-btn:focus {
+  outline: none;
+}
+.tab:focus-visible,
+.pill:focus-visible,
+.x-btn:focus-visible,
+.float-btn:focus-visible {
+  outline: 0.12em solid var(--blue-lip);
+  outline-offset: 0.08em;
 }
 
 .tab-star {
@@ -459,7 +485,7 @@
     0 0 0 0.08em #2b2a36,
     0.12em 0.16em 0 rgba(40, 40, 40, 0.8);
   color: var(--ui-fill-hi);
-  font-family: var(--sans);
+  font-family: var(--serif);
   pointer-events: none;
 }
 .clock-label {
@@ -484,9 +510,9 @@
   padding: 0.12em 0.35em;
   border-radius: 0.12em;
   background: #4f4e61;
-  font-size: 0.72em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
+  font-size: 0.8em;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1.2;
 }
 .clock-row.running {
   background: var(--clock-active);
@@ -633,6 +659,14 @@
   font-weight: 400;
   line-height: 1.05;
 }
+.game-over h2.smaller {
+  font-size: 1.45em;
+  margin-bottom: 0.25em;
+}
+.overlay-wrap {
+  overflow-y: auto;
+  padding: 0.5em;
+}
 .game-over .detail {
   margin: 0.2em 0 0.9em;
   font-size: 1.05em;
@@ -724,13 +758,18 @@
 
 .home {
   position: absolute;
-  top: calc(0.55em + env(safe-area-inset-top, 0px));
-  left: calc(1.9em + env(safe-area-inset-left, 0px));
-  right: 0.5em;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: calc(0.55em + env(safe-area-inset-top, 0px)) 0.5em calc(0.8em + env(safe-area-inset-bottom, 0px))
+    calc(1.9em + env(safe-area-inset-left, 0px));
   z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* short views (e.g. 300% browser zoom): scroll rather than cut off the buttons */
+  overflow-y: auto;
 }
 .title {
   margin: 0;
@@ -779,6 +818,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* the panels shrink their lists first; below that the whole screen scrolls */
+  overflow-y: auto;
   padding: calc(0.7em + env(safe-area-inset-top, 0px)) 1em calc(0.8em + env(safe-area-inset-bottom, 0px));
   z-index: 2;
   animation: fade-in 0.2s ease;
@@ -823,16 +864,27 @@
 .screen-panel {
   width: min(calc(31em / 0.8), 100%);
   flex: 0 1 auto;
-  min-height: 0;
+  /* min-height: auto keeps the variant list's minimum, so the action buttons never get clipped */
   display: flex;
   flex-direction: column;
   gap: 0.35em;
   padding: 0.8em 1em 1em;
   font-size: 0.8em;
-  overflow: hidden;
 }
 .screen-panel.scroll {
+  min-height: 0;
   overflow: auto;
+}
+.screen-panel.scroll .panel-actions,
+.screen-panel.scroll .field-label {
+  flex: none;
+}
+.screen > * {
+  flex-shrink: 0;
+}
+.screen > .screen-panel,
+.screen > .guide {
+  flex-shrink: 1;
 }
 .field-label {
   margin-top: 0.2em;
@@ -1235,7 +1287,7 @@
   }
 }
 
-@media (max-height: 520px) and (min-width: 520px) {
+@media (max-height: 520px) {
   .title .big {
     font-size: 5.5em;
   }
@@ -1252,4 +1304,9 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* the way out of a game: first and prominent in the "*" menu */
+.star-menu .leave-pill {
+  margin-bottom: 0.25em;
 }
